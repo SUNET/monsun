@@ -1,0 +1,16 @@
+[project]
+name = "monsun"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.14"
+dependencies = [
+    "aiofiles>=25.1.0",
+    "alembic>=1.18.4",
+    "apscheduler>=3.11.2",
+    "asyncpg>=0.31.0",
+    "bcrypt>=5.0.0",
+    "nicegui>=3.6.1",
+    "pydantic-settings>=2.13.1",
+    "python-multipart>=0.0.21",
+    "sqlalchemy[asyncio]>=2.0.49",
+]

@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: claw
+      POSTGRES_PASSWORD: claw
+      POSTGRES_DB: claw
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    ports:
+      - "8081:8081"
+    environment:
+      CLAW_DATABASE_URL: postgresql+asyncpg://claw:claw@db:5432/claw
+      CLAW_SECRET_KEY: change-me-in-production
+      CLAW_STORAGE_SECRET: change-me-storage-secret
+      CLAW_BASE_PATH:
+    depends_on:
+      - db
+    volumes:
+      - ./media:/app/media
+
+volumes:
+  pgdata:
