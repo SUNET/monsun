@@ -66,3 +66,35 @@ body {
 .q-notification {
   border-radius: 10px !important;
 }
+
+/* Compact upload — looks like an outlined button */
+.upload-btn {
+  min-height: auto !important;
+  max-width: 220px;
+  border: 1px dashed #c0c4cc !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  background: #fafafa !important;
+  transition: border-color 0.2s, background 0.2s;
+}
+.upload-btn:hover {
+  border-color: #CA402B !important;
+  background: #fff5f3 !important;
+  box-shadow: none !important;
+}
+.upload-btn .q-uploader__header {
+  min-height: auto !important;
+  padding: 6px 14px !important;
+  background: transparent !important;
+  color: #555 !important;
+}
+.upload-btn .q-uploader__title {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+.upload-btn .q-uploader__subtitle {
+  display: none !important;
+}
+.upload-btn .q-uploader__list {
+  display: none !important;
+}

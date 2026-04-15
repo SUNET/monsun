@@ -24,3 +24,4 @@ class User(Base, TimestampMixin):
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole), default=UserRole.participant
     )
+    avatar_url: Mapped[str | None] = mapped_column(String(500), default=None)

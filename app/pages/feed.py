@@ -394,14 +394,23 @@ def feed_page():
                             await refresh_news_feed()
 
         def get_post_identity(post: Post):
+            """Returns (display_name, handle, initial, avatar_url_or_None)."""
             if post.persona:
-                return post.persona.display_name, f"@{post.persona.handle}", post.persona.display_name[0].upper()
-            return post.author.display_name, f"@{post.author.username}", post.author.display_name[0].upper()
+                return post.persona.display_name, f"@{post.persona.handle}", post.persona.display_name[0].upper(), None
+            avatar = getattr(post.author, "avatar_url", None)
+            return post.author.display_name, f"@{post.author.username}", post.author.display_name[0].upper(), avatar
+
+        def post_avatar(avatar_url, initial, color="primary", text_color="white", size="md"):
+            if avatar_url:
+                sz = {"xs": "w-6 h-6", "sm": "w-8 h-8", "md": "w-10 h-10"}.get(size, "w-10 h-10")
+                ui.image(avatar_url).classes(f"rounded-full object-cover {sz}")
+            else:
+                ui.avatar(initial, color=color, text_color=text_color, size=size)
 
         def render_reply(reply: Post):
-            r_name, r_handle, r_initial = get_post_identity(reply)
+            r_name, r_handle, r_initial, r_avatar = get_post_identity(reply)
             with ui.row().classes("items-start gap-2 w-full"):
-                ui.avatar(r_initial, color="grey-4", text_color="grey-8", size="xs")
+                post_avatar(r_avatar, r_initial, color="grey-4", text_color="grey-8", size="xs")
                 with ui.column().classes("flex-1 gap-0"):
                     with ui.row().classes("items-center gap-2"):
                         ui.label(r_name).classes("font-semibold text-gray-700 text-sm")
@@ -416,7 +425,7 @@ def feed_page():
                         )
 
         def render_social_post(post: Post, reply_count: int):
-            post_display_name, post_handle, post_initial = get_post_identity(post)
+            post_display_name, post_handle, post_initial, post_avatar_url = get_post_identity(post)
 
             like_count = sum(
                 1 for i in post.interactions if i.interaction == InteractionType.like
@@ -439,7 +448,7 @@ def feed_page():
                         ui.label(f"Reposted by {post_handle}").classes("text-xs text-gray-400")
 
                 with ui.row().classes("items-start gap-3 w-full p-3"):
-                    ui.avatar(post_initial, color="primary", text_color="white")
+                    post_avatar(post_avatar_url, post_initial)
 
                     with ui.column().classes("flex-1 gap-1"):
                         with ui.row().classes("items-center gap-2"):
@@ -523,7 +532,7 @@ def feed_page():
                         ).props("flat dense no-caps size=sm color=grey").classes("text-xs")
 
         def render_news_post(post: Post):
-            post_display_name, post_handle, post_initial = get_post_identity(post)
+            post_display_name, post_handle, post_initial, post_avatar_url = get_post_identity(post)
 
             def show_article():
                 article_source.set_text(f"{post_display_name} {post_handle}")
@@ -540,7 +549,7 @@ def feed_page():
                 ui.element("div").classes("w-full h-1 bg-red-500 rounded-t")
                 with ui.column().classes("p-3 gap-2"):
                     with ui.row().classes("items-center gap-2"):
-                        ui.avatar(post_initial, color="red", text_color="white", size="sm")
+                        post_avatar(post_avatar_url, post_initial, color="red", text_color="white", size="sm")
                         ui.label(post_display_name).classes("font-semibold text-red-700 text-sm")
                         if post.published_at:
                             ui.label(
@@ -652,16 +661,15 @@ def feed_page():
                     post_content = ui.textarea(placeholder="What's happening?").classes(
                         "w-full"
                     ).props("autogrow outlined rows=3")
-                    image_preview = ui.image().classes(
-                        "w-full max-h-32 object-cover rounded-lg mt-1"
-                    )
-                    image_preview.set_visibility(False)
-                    social_upload = ui.upload(
-                        on_upload=handle_upload,
-                        auto_upload=True,
-                        max_files=1,
-                        label="Attach image",
-                    ).props('accept="image/*" flat bordered').classes("w-full")
+                    with ui.row().classes("items-center gap-3 w-full"):
+                        image_preview = ui.image().classes(
+                            "w-20 h-20 rounded-lg object-cover"
+                        )
+                        image_preview.set_visibility(False)
+                        social_upload = ui.upload(
+                            on_upload=handle_upload, auto_upload=True, max_files=1,
+                            label="Attach image",
+                        ).props('accept="image/*" flat hide-upload-btn').classes("upload-btn")
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=social_dialog.close).props("flat no-caps")
                         ui.button("Post", on_click=create_post).props("unelevated no-caps")
@@ -691,16 +699,15 @@ def feed_page():
                     news_body = ui.textarea("Full article (Markdown)").classes("w-full").props(
                         "autogrow outlined rows=8"
                     )
-                    news_image_preview = ui.image().classes(
-                        "w-full max-h-32 object-cover rounded-lg mt-1"
-                    )
-                    news_image_preview.set_visibility(False)
-                    news_upload = ui.upload(
-                        on_upload=handle_news_upload,
-                        auto_upload=True,
-                        max_files=1,
-                        label="Attach image",
-                    ).props('accept="image/*" flat bordered').classes("w-full")
+                    with ui.row().classes("items-center gap-3 w-full"):
+                        news_image_preview = ui.image().classes(
+                            "w-20 h-20 rounded-lg object-cover"
+                        )
+                        news_image_preview.set_visibility(False)
+                        news_upload = ui.upload(
+                            on_upload=handle_news_upload, auto_upload=True, max_files=1,
+                            label="Attach image",
+                        ).props('accept="image/*" flat hide-upload-btn').classes("upload-btn")
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=news_dialog.close).props("flat no-caps")
                         ui.button("Publish", on_click=create_news_post).props("unelevated no-caps color=red")

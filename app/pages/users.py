@@ -1,12 +1,26 @@
+import os
 import uuid
 
-from nicegui import app, ui
+from nicegui import app, events, ui
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import async_session
 from app.models import User, UserRole
 from app.pages.layout import nav_header
 from app.services.auth import hash_password
+
+
+def _user_avatar(user: "User", size: str = "sm"):
+    """Render a user avatar — image if available, letter fallback."""
+    if user.avatar_url:
+        ui.image(user.avatar_url).classes(
+            f"rounded-full object-cover {'w-8 h-8' if size == 'sm' else 'w-10 h-10'}"
+        )
+    else:
+        ui.avatar(
+            user.display_name[0].upper(), color="primary", text_color="white", size=size
+        )
 
 
 def users_page():
@@ -18,8 +32,21 @@ def users_page():
             return ui.navigate.to("/")
         nav_header()
 
-        # --- State for edit dialog ---
+        # --- State ---
         edit_user_id = [None]
+        delete_user_id = [None]
+        edit_avatar_path = [None]
+
+        # --- Avatar upload handler for edit dialog ---
+        async def handle_avatar_upload(e: events.UploadEventArguments):
+            ext = os.path.splitext(e.file.name)[1].lower()
+            filename = f"avatar_{uuid.uuid4().hex}{ext}"
+            filepath = os.path.join(settings.media_dir, filename)
+            await e.file.save(filepath)
+            edit_avatar_path[0] = f"/media/{filename}"
+            edit_avatar_preview.set_source(edit_avatar_path[0])
+            edit_avatar_preview.set_visibility(True)
+            ui.notify("Avatar uploaded", type="positive")
 
         async def load_users():
             user_list.clear()
@@ -40,9 +67,7 @@ def users_page():
                     with ui.row().classes(
                         "items-center gap-4 w-full py-3 px-3 rounded-lg hover:bg-gray-50"
                     ):
-                        ui.avatar(
-                            u.display_name[0].upper(), color="primary", text_color="white", size="sm"
-                        )
+                        _user_avatar(u)
                         with ui.column().classes("gap-0 flex-1"):
                             ui.label(u.display_name).classes("font-medium text-gray-800")
                             ui.label(f"@{u.username}").classes("text-gray-500 text-sm")
@@ -82,6 +107,7 @@ def users_page():
         # --- Edit user ---
         async def open_edit(uid: uuid.UUID):
             edit_user_id[0] = uid
+            edit_avatar_path[0] = None
             async with async_session() as session:
                 u = await session.get(User, uid)
                 if not u:
@@ -91,6 +117,13 @@ def users_page():
                 edit_display.value = u.display_name
                 edit_password.value = ""
                 edit_role.value = u.role.value
+                if u.avatar_url:
+                    edit_avatar_preview.set_source(u.avatar_url)
+                    edit_avatar_preview.set_visibility(True)
+                    edit_avatar_path[0] = u.avatar_url
+                else:
+                    edit_avatar_preview.set_visibility(False)
+            edit_upload.reset()
             edit_dialog.open()
 
         async def save_edit():
@@ -107,10 +140,16 @@ def users_page():
                 u.role = UserRole(edit_role.value)
                 if edit_password.value:
                     u.password_hash = hash_password(edit_password.value)
+                if edit_avatar_path[0] is not None:
+                    u.avatar_url = edit_avatar_path[0] or None
                 await session.commit()
             edit_dialog.close()
             await load_users()
             ui.notify("User updated", type="positive")
+
+        async def remove_avatar():
+            edit_avatar_path[0] = ""  # empty string signals removal
+            edit_avatar_preview.set_visibility(False)
 
         # --- Delete user ---
         async def confirm_delete(uid: uuid.UUID, display_name: str):
@@ -119,8 +158,6 @@ def users_page():
                 f'Are you sure you want to delete "{display_name}"? This cannot be undone.'
             )
             delete_dialog.open()
-
-        delete_user_id = [None]
 
         async def do_delete():
             async with async_session() as session:
@@ -165,6 +202,24 @@ def users_page():
             with ui.dialog() as edit_dialog:
                 with ui.card().classes("w-96 p-4"):
                     ui.label("Edit User").classes("text-lg font-bold text-gray-800 mb-3")
+
+                    # Avatar section
+                    ui.label("Avatar").classes("text-sm font-medium text-gray-600 mb-1")
+                    with ui.row().classes("items-center gap-3 w-full"):
+                        edit_avatar_preview = ui.image().classes(
+                            "w-16 h-16 rounded-full object-cover"
+                        )
+                        edit_avatar_preview.set_visibility(False)
+                        with ui.column().classes("gap-1"):
+                            edit_upload = ui.upload(
+                                on_upload=handle_avatar_upload, auto_upload=True, max_files=1,
+                                label="Upload photo",
+                            ).props('accept="image/*" flat hide-upload-btn').classes("upload-btn")
+                            ui.button(
+                                "Remove", icon="close",
+                                on_click=lambda: (remove_avatar(), edit_upload.reset()),
+                            ).props("flat no-caps dense size=sm color=grey")
+
                     edit_username = ui.input("Username").props("outlined").classes("w-full")
                     edit_display = ui.input("Display Name").props("outlined").classes("w-full")
                     edit_password = ui.input(

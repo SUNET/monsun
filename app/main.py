@@ -54,6 +54,12 @@ async def startup():
                 "ALTER TABLE posts ADD COLUMN IF NOT EXISTS sort_order INTEGER"
             )
         )
+        # Add avatar_url column for user avatars
+        await conn.execute(
+            sqlalchemy.text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)"
+            )
+        )
     async with async_session() as session:
         await create_default_admin(session)
 
