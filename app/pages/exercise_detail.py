@@ -1,10 +1,12 @@
+import os
 import uuid
 from datetime import datetime, timezone
 
-from nicegui import app, ui
+from nicegui import app, events, ui
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import async_session
 from app.models import (
     Exercise,
@@ -48,6 +50,114 @@ def exercise_detail_page():
             return
 
         is_admin = role in ("superadmin", "admin")
+
+        # --- Image upload state for flow items ---
+        flow_social_image_path = [None]
+        flow_news_image_path = [None]
+
+        async def handle_flow_social_image(e: events.UploadEventArguments):
+            ext = os.path.splitext(e.file.name)[1].lower()
+            filename = f"{uuid.uuid4().hex}{ext}"
+            filepath = os.path.join(settings.media_dir, filename)
+            await e.file.save(filepath)
+            flow_social_image_path[0] = f"/media/{filename}"
+            flow_social_image_preview.set_source(flow_social_image_path[0])
+            flow_social_image_preview.set_visibility(True)
+            ui.notify("Image attached", type="positive")
+
+        async def handle_flow_news_image(e: events.UploadEventArguments):
+            ext = os.path.splitext(e.file.name)[1].lower()
+            filename = f"{uuid.uuid4().hex}{ext}"
+            filepath = os.path.join(settings.media_dir, filename)
+            await e.file.save(filepath)
+            flow_news_image_path[0] = f"/media/{filename}"
+            flow_news_image_preview.set_source(flow_news_image_path[0])
+            flow_news_image_preview.set_visibility(True)
+            ui.notify("Image attached", type="positive")
+
+        # --- Clone exercise ---
+        async def clone_exercise():
+            async with async_session() as session:
+                # Load source exercise with personas and flow items
+                result = await session.execute(
+                    select(Exercise)
+                    .options(selectinload(Exercise.personas))
+                    .where(Exercise.id == ex_uuid)
+                )
+                src = result.scalar_one()
+
+                result = await session.execute(
+                    select(ExerciseMembership).where(
+                        ExerciseMembership.exercise_id == ex_uuid
+                    )
+                )
+                src_members = result.scalars().all()
+
+                result = await session.execute(
+                    select(Post)
+                    .where(
+                        Post.exercise_id == ex_uuid,
+                        Post.is_inject == True,
+                        Post.sort_order != None,
+                    )
+                    .order_by(Post.sort_order)
+                )
+                src_flow = result.scalars().all()
+
+                # Create new exercise
+                new_ex = Exercise(
+                    name=f"{src.name} (copy)",
+                    description=src.description,
+                    state=ExerciseState.draft,
+                    cloned_from_id=src.id,
+                )
+                session.add(new_ex)
+                await session.flush()
+
+                # Clone personas — map old id to new id for flow items
+                persona_map = {}
+                for p in src.personas:
+                    new_p = Persona(
+                        exercise_id=new_ex.id,
+                        handle=p.handle,
+                        display_name=p.display_name,
+                        bio=p.bio,
+                        persona_type=p.persona_type,
+                    )
+                    session.add(new_p)
+                    await session.flush()
+                    persona_map[p.id] = new_p.id
+
+                # Clone members
+                for m in src_members:
+                    session.add(ExerciseMembership(
+                        exercise_id=new_ex.id,
+                        user_id=m.user_id,
+                        role=m.role,
+                    ))
+
+                # Clone flow items (all unpublished)
+                for item in src_flow:
+                    new_persona_id = persona_map.get(item.persona_id) if item.persona_id else None
+                    session.add(Post(
+                        exercise_id=new_ex.id,
+                        persona_id=new_persona_id,
+                        author_user_id=user_uuid,
+                        content=item.content,
+                        headline=item.headline,
+                        article_body=item.article_body,
+                        feed_type=item.feed_type,
+                        image_url=item.image_url,
+                        is_inject=True,
+                        is_published=False,
+                        sort_order=item.sort_order,
+                    ))
+
+                await session.commit()
+                new_id = new_ex.id
+
+            ui.notify("Exercise cloned", type="positive")
+            ui.navigate.to(f"/exercise/{new_id}")
 
         # Load personas for flow dialogs
         async def get_personas():
@@ -208,9 +318,12 @@ def exercise_detail_page():
                             ui.icon("schedule", size="xs").classes("text-gray-400")
                         with ui.column().classes("flex-1 gap-0 min-w-0"):
                             ui.label(persona_label).classes("text-xs text-gray-500")
-                            ui.label(preview).classes(
-                                "text-sm text-gray-700 truncate"
-                            )
+                            with ui.row().classes("items-center gap-2"):
+                                ui.label(preview).classes(
+                                    "text-sm text-gray-700 truncate"
+                                )
+                                if item.image_url:
+                                    ui.icon("image", size="xs").classes("text-gray-400").tooltip("Has image")
                         with ui.row().classes("gap-0"):
                             if idx > 0:
                                 ui.button(icon="arrow_upward").props(
@@ -235,8 +348,8 @@ def exercise_detail_page():
             if not flow_social_persona.value:
                 ui.notify("Select a persona", type="warning")
                 return
-            if not flow_social_content.value.strip():
-                ui.notify("Content is required", type="warning")
+            if not flow_social_content.value.strip() and not flow_social_image_path[0]:
+                ui.notify("Content or image is required", type="warning")
                 return
             order = await get_next_sort_order()
             async with async_session() as session:
@@ -249,10 +362,14 @@ def exercise_detail_page():
                     is_inject=True,
                     is_published=False,
                     sort_order=order,
+                    image_url=flow_social_image_path[0],
                 )
                 session.add(post)
                 await session.commit()
             flow_social_content.value = ""
+            flow_social_image_path[0] = None
+            flow_social_image_preview.set_visibility(False)
+            flow_social_upload.reset()
             flow_social_dialog.close()
             await load_flow()
             ui.notify("Added to flow", type="positive")
@@ -277,12 +394,16 @@ def exercise_detail_page():
                     is_inject=True,
                     is_published=False,
                     sort_order=order,
+                    image_url=flow_news_image_path[0],
                 )
                 session.add(post)
                 await session.commit()
             flow_news_headline.value = ""
             flow_news_summary.value = ""
             flow_news_body.value = ""
+            flow_news_image_path[0] = None
+            flow_news_image_preview.set_visibility(False)
+            flow_news_upload.reset()
             flow_news_dialog.close()
             await load_flow()
             ui.notify("Added to flow", type="positive")
@@ -357,16 +478,21 @@ def exercise_detail_page():
         # --- Layout ---
         with ui.column().classes("w-full max-w-4xl mx-auto p-6"):
             # Header
-            with ui.row().classes("items-center gap-3 mb-2"):
-                ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/exercises")).props(
-                    "flat round"
-                )
-                ui.label(exercise.name).classes("text-2xl font-bold text-gray-800")
-                state_color = {
-                    "draft": "gray", "ready": "blue", "live": "green",
-                    "ended": "orange", "archived": "red",
-                }.get(exercise.state.value, "gray")
-                ui.badge(exercise.state.value, color=state_color)
+            with ui.row().classes("items-center justify-between w-full mb-2"):
+                with ui.row().classes("items-center gap-3"):
+                    ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to("/exercises")).props(
+                        "flat round"
+                    )
+                    ui.label(exercise.name).classes("text-2xl font-bold text-gray-800")
+                    state_color = {
+                        "draft": "gray", "ready": "blue", "live": "green",
+                        "ended": "orange", "archived": "red",
+                    }.get(exercise.state.value, "gray")
+                    ui.badge(exercise.state.value, color=state_color)
+                if is_admin:
+                    ui.button("Clone", icon="content_copy", on_click=clone_exercise).props(
+                        "outlined no-caps"
+                    )
 
             if exercise.description:
                 ui.label(exercise.description).classes("text-gray-500 mb-4 ml-12")
@@ -506,6 +632,15 @@ def exercise_detail_page():
                     flow_social_content = ui.textarea("Post content").classes(
                         "w-full"
                     ).props("autogrow outlined rows=3")
+                    with ui.row().classes("items-center gap-3 w-full"):
+                        flow_social_image_preview = ui.image().classes(
+                            "w-20 h-20 rounded-lg object-cover"
+                        )
+                        flow_social_image_preview.set_visibility(False)
+                        flow_social_upload = ui.upload(
+                            on_upload=handle_flow_social_image, auto_upload=True, max_files=1,
+                            label="Attach image",
+                        ).props('accept="image/*" flat hide-upload-btn').classes("upload-btn")
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=flow_social_dialog.close).props("flat no-caps")
                         ui.button("Add to Flow", on_click=add_social_to_flow).props("unelevated no-caps")
@@ -523,6 +658,15 @@ def exercise_detail_page():
                     flow_news_body = ui.textarea("Full article (Markdown)").classes("w-full").props(
                         "autogrow outlined rows=8"
                     )
+                    with ui.row().classes("items-center gap-3 w-full"):
+                        flow_news_image_preview = ui.image().classes(
+                            "w-20 h-20 rounded-lg object-cover"
+                        )
+                        flow_news_image_preview.set_visibility(False)
+                        flow_news_upload = ui.upload(
+                            on_upload=handle_flow_news_image, auto_upload=True, max_files=1,
+                            label="Attach image",
+                        ).props('accept="image/*" flat hide-upload-btn').classes("upload-btn")
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=flow_news_dialog.close).props("flat no-caps")
                         ui.button("Add to Flow", on_click=add_news_to_flow).props("unelevated no-caps")
