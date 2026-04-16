@@ -24,14 +24,10 @@ def login_page():
             else:
                 ui.notify("Invalid username or password", type="negative")
 
-        with ui.column().classes("absolute-center items-center gap-6"):
-            with ui.row().classes("items-center gap-3 mb-2"):
-                ui.image("/static/sunet-logo.svg").classes("w-10")
-                ui.label("Monsun").classes("text-3xl font-bold").style(f"color: {BRAND_COLOR}")
-            ui.label("Media Simulator").classes("text-sm text-gray-500 -mt-4")
-
-            with ui.card().classes("w-96 p-6"):
-                ui.label("Sign in").classes("text-xl font-bold text-gray-800 mb-2")
+        with ui.card().classes("absolute-center w-96 p-6"):
+            with ui.column().classes("items-center w-full mb-4"):
+                ui.image("/static/sunet-logo.svg").classes("w-12")
+                ui.label("Monsun").classes("text-2xl font-bold mt-2").style(f"color: {BRAND_COLOR}")
                 username = ui.input("Username").props("outlined").classes("w-full")
                 password = ui.input("Password", password=True, password_toggle_button=True).props(
                     "outlined"
