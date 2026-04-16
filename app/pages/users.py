@@ -4,7 +4,7 @@ import uuid
 from nicegui import app, events, ui
 from sqlalchemy import select
 
-from app.config import settings
+from app.config import settings, validate_upload_extension
 from app.database import async_session
 from app.models import User, UserRole
 from app.pages.layout import nav_header
@@ -30,7 +30,7 @@ def users_page():
         role = app.storage.user.get("role")
         if not user_id or role != "superadmin":
             return ui.navigate.to("/")
-        nav_header()
+        await nav_header()
 
         # --- State ---
         edit_user_id = [None]
@@ -39,7 +39,10 @@ def users_page():
 
         # --- Avatar upload handler for edit dialog ---
         async def handle_avatar_upload(e: events.UploadEventArguments):
-            ext = os.path.splitext(e.file.name)[1].lower()
+            ext = validate_upload_extension(e.file.name)
+            if not ext:
+                ui.notify("Only image files (jpg, png, gif, webp) are allowed", type="negative")
+                return
             filename = f"avatar_{uuid.uuid4().hex}{ext}"
             filepath = os.path.join(settings.media_dir, filename)
             await e.file.save(filepath)

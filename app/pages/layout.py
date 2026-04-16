@@ -17,6 +17,26 @@ from app.models import (
 BRAND_COLOR = "#CA402B"
 
 
+async def refresh_role_from_db():
+    """Re-read the user's role from the database and update session storage.
+
+    Ensures role demotions take effect without requiring re-login.
+    Returns False if the user no longer exists (session should be cleared).
+    """
+    uid = app.storage.user.get("user_id")
+    if not uid:
+        return False
+    async with async_session() as session:
+        user = await session.get(User, uuid.UUID(uid))
+    if not user:
+        app.storage.user.clear()
+        return False
+    app.storage.user["role"] = user.role.value
+    app.storage.user["display_name"] = user.display_name
+    app.storage.user["username"] = user.username
+    return True
+
+
 def apply_theme():
     ui.add_head_html('<link rel="stylesheet" href="/static/theme.css">')
     ui.add_head_html('<link rel="icon" type="image/png" href="/static/favicon.png">')
@@ -47,10 +67,15 @@ async def _find_active_exercise(user_id: str, role: str) -> str | None:
     return str(exercise.id) if exercise else None
 
 
-def nav_header():
+async def nav_header():
     apply_theme()
     user_id = app.storage.user.get("user_id")
     if not user_id:
+        return
+
+    # Re-verify role from DB on every page load
+    if not await refresh_role_from_db():
+        ui.navigate.to("/login")
         return
 
     role = app.storage.user.get("role", "")

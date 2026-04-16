@@ -6,7 +6,7 @@ from nicegui import app, events, ui
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.config import settings
+from app.config import settings, validate_upload_extension
 from app.database import async_session
 from app.models import (
     Exercise,
@@ -33,7 +33,7 @@ def exercise_detail_page():
         if role not in ("superadmin", "admin"):
             return ui.navigate.to(f"/feed/{exercise_id}")
 
-        nav_header()
+        await nav_header()
         ex_uuid = uuid.UUID(exercise_id)
         user_uuid = uuid.UUID(user_id)
 
@@ -56,7 +56,10 @@ def exercise_detail_page():
         flow_news_image_path = [None]
 
         async def handle_flow_social_image(e: events.UploadEventArguments):
-            ext = os.path.splitext(e.file.name)[1].lower()
+            ext = validate_upload_extension(e.file.name)
+            if not ext:
+                ui.notify("Only image files (jpg, png, gif, webp) are allowed", type="negative")
+                return
             filename = f"{uuid.uuid4().hex}{ext}"
             filepath = os.path.join(settings.media_dir, filename)
             await e.file.save(filepath)
@@ -66,7 +69,10 @@ def exercise_detail_page():
             ui.notify("Image attached", type="positive")
 
         async def handle_flow_news_image(e: events.UploadEventArguments):
-            ext = os.path.splitext(e.file.name)[1].lower()
+            ext = validate_upload_extension(e.file.name)
+            if not ext:
+                ui.notify("Only image files (jpg, png, gif, webp) are allowed", type="negative")
+                return
             filename = f"{uuid.uuid4().hex}{ext}"
             filepath = os.path.join(settings.media_dir, filename)
             await e.file.save(filepath)

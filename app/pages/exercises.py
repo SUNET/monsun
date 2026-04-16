@@ -23,7 +23,7 @@ def exercises_page():
         user_id = app.storage.user.get("user_id")
         if not user_id:
             return ui.navigate.to("/login")
-        nav_header()
+        await nav_header()
         role = app.storage.user.get("role")
         is_admin = role in ("superadmin", "admin")
 

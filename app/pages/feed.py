@@ -6,10 +6,11 @@ from nicegui import app, events, ui
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.config import settings
+from app.config import settings, validate_upload_extension
 from app.database import async_session
 from app.models import (
     Exercise,
+    ExerciseMembership,
     ExerciseState,
     FeedType,
     InteractionType,
@@ -26,7 +27,7 @@ def feed_page():
         user_id = app.storage.user.get("user_id")
         if not user_id:
             return ui.navigate.to("/login")
-        nav_header()
+        await nav_header()
         user_uuid = uuid.UUID(user_id)
         ex_uuid = uuid.UUID(exercise_id)
         role = app.storage.user.get("role", "participant")
@@ -43,6 +44,18 @@ def feed_page():
                 ui.label("Exercise not found")
                 return
 
+            # Authorization: participants must be a member of this exercise
+            if not is_admin:
+                member_check = await session.execute(
+                    select(ExerciseMembership).where(
+                        ExerciseMembership.exercise_id == ex_uuid,
+                        ExerciseMembership.user_id == user_uuid,
+                    )
+                )
+                if not member_check.scalar_one_or_none():
+                    ui.label("You are not a member of this exercise").classes("text-red-500")
+                    return
+
             result = await session.execute(
                 select(Persona)
                 .where(Persona.exercise_id == ex_uuid)
@@ -56,7 +69,10 @@ def feed_page():
         uploaded_image_path = [None]
 
         async def handle_upload(e: events.UploadEventArguments):
-            ext = os.path.splitext(e.file.name)[1].lower()
+            ext = validate_upload_extension(e.file.name)
+            if not ext:
+                ui.notify("Only image files (jpg, png, gif, webp) are allowed", type="negative")
+                return
             filename = f"{uuid.uuid4().hex}{ext}"
             filepath = os.path.join(settings.media_dir, filename)
             await e.file.save(filepath)
@@ -72,7 +88,10 @@ def feed_page():
         news_uploaded_image_path = [None]
 
         async def handle_news_upload(e: events.UploadEventArguments):
-            ext = os.path.splitext(e.file.name)[1].lower()
+            ext = validate_upload_extension(e.file.name)
+            if not ext:
+                ui.notify("Only image files (jpg, png, gif, webp) are allowed", type="negative")
+                return
             filename = f"{uuid.uuid4().hex}{ext}"
             filepath = os.path.join(settings.media_dir, filename)
             await e.file.save(filepath)

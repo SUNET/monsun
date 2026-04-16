@@ -1,11 +1,29 @@
+import logging
 import os
+import uuid as _uuid
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from nicegui import app, ui
 
-from app.config import settings
+from app.config import WEAK_SECRETS, settings
+
+logger = logging.getLogger("monsun")
+
+# Warn loudly about weak secrets at import time
+if settings.storage_secret in WEAK_SECRETS:
+    logger.warning(
+        "CLAW_STORAGE_SECRET is set to a weak default (%r). "
+        "Set a strong random value before deploying to production.",
+        settings.storage_secret,
+    )
+if settings.secret_key in WEAK_SECRETS:
+    logger.warning(
+        "CLAW_SECRET_KEY is set to a weak default (%r). "
+        "Set a strong random value before deploying to production.",
+        settings.secret_key,
+    )
 
 os.makedirs(settings.media_dir, exist_ok=True)
 app.add_static_files("/media", settings.media_dir)
