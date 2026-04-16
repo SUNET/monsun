@@ -75,6 +75,83 @@ def exercise_detail_page():
             flow_news_image_preview.set_visibility(True)
             ui.notify("Image attached", type="positive")
 
+        # --- Edit exercise name/description ---
+        async def save_exercise_details():
+            async with async_session() as session:
+                result = await session.execute(
+                    select(Exercise).where(Exercise.id == ex_uuid)
+                )
+                ex = result.scalar_one()
+                ex.name = edit_ex_name.value.strip()
+                ex.description = edit_ex_desc.value.strip()
+                await session.commit()
+            edit_exercise_dialog.close()
+            ui.notify("Exercise updated", type="positive")
+            ui.navigate.to(f"/exercise/{exercise_id}")
+
+        # --- Edit persona ---
+        edit_persona_id = [None]
+
+        async def open_edit_persona(pid: uuid.UUID):
+            edit_persona_id[0] = pid
+            async with async_session() as session:
+                p = await session.get(Persona, pid)
+                if not p:
+                    return
+                edit_persona_handle.value = p.handle
+                edit_persona_display.value = p.display_name
+                edit_persona_bio.value = p.bio or ""
+                edit_persona_type.value = p.persona_type.value
+            edit_persona_dialog.open()
+
+        async def save_persona():
+            if not edit_persona_handle.value.strip():
+                ui.notify("Handle is required", type="warning")
+                return
+            async with async_session() as session:
+                p = await session.get(Persona, edit_persona_id[0])
+                if p:
+                    p.handle = edit_persona_handle.value.strip()
+                    p.display_name = edit_persona_display.value.strip() or edit_persona_handle.value.strip()
+                    p.bio = edit_persona_bio.value.strip()
+                    p.persona_type = PersonaType(edit_persona_type.value)
+                    await session.commit()
+            edit_persona_dialog.close()
+            ui.notify("Persona updated", type="positive")
+            ui.navigate.to(f"/exercise/{exercise_id}")
+
+        # --- Edit flow item ---
+        edit_flow_id = [None]
+        edit_flow_type = [None]
+
+        async def open_edit_flow(post_id: uuid.UUID):
+            async with async_session() as session:
+                post = await session.get(Post, post_id)
+                if not post:
+                    return
+                edit_flow_id[0] = post_id
+                edit_flow_type[0] = post.feed_type
+                edit_flow_content.value = post.content or ""
+                edit_flow_headline.value = post.headline or ""
+                edit_flow_body.value = post.article_body or ""
+                # Show/hide news-specific fields
+                edit_flow_headline_field.set_visibility(post.feed_type == FeedType.news)
+                edit_flow_body_field.set_visibility(post.feed_type == FeedType.news)
+            edit_flow_dialog.open()
+
+        async def save_flow_item():
+            async with async_session() as session:
+                post = await session.get(Post, edit_flow_id[0])
+                if post:
+                    post.content = edit_flow_content.value.strip()
+                    if post.feed_type == FeedType.news:
+                        post.headline = edit_flow_headline.value.strip()
+                        post.article_body = edit_flow_body.value.strip()
+                    await session.commit()
+            edit_flow_dialog.close()
+            await load_flow()
+            ui.notify("Flow item updated", type="positive")
+
         # --- Clone exercise ---
         async def clone_exercise():
             async with async_session() as session:
@@ -333,6 +410,9 @@ def exercise_detail_page():
                                 ui.button(icon="arrow_downward").props(
                                     "flat dense round size=xs color=grey"
                                 ).on("click", lambda _, iid=item.id: move_item(iid, 1))
+                            ui.button(icon="edit").props(
+                                "flat dense round size=xs color=grey"
+                            ).on("click", lambda _, iid=item.id: open_edit_flow(iid))
                             if not item.is_published:
                                 ui.button(icon="play_arrow").props(
                                     "flat dense round size=xs color=green"
@@ -489,6 +569,12 @@ def exercise_detail_page():
                         "ended": "orange", "archived": "red",
                     }.get(exercise.state.value, "gray")
                     ui.badge(exercise.state.value, color=state_color)
+                    if is_admin:
+                        ui.button(icon="edit", on_click=lambda: (
+                            setattr(edit_ex_name, 'value', exercise.name),
+                            setattr(edit_ex_desc, 'value', exercise.description or ""),
+                            edit_exercise_dialog.open(),
+                        )).props("flat round dense size=sm color=grey")
                 if is_admin:
                     ui.button("Clone", icon="content_copy", on_click=clone_exercise).props(
                         "outlined no-caps"
@@ -552,10 +638,14 @@ def exercise_detail_page():
                     for p in exercise.personas:
                         with ui.row().classes("items-center gap-3 py-2 px-2 rounded-lg hover:bg-gray-50"):
                             ui.avatar(p.display_name[0].upper(), color="primary", text_color="white", size="sm")
-                            with ui.column().classes("gap-0"):
+                            with ui.column().classes("gap-0 flex-1"):
                                 ui.label(p.display_name).classes("font-medium text-gray-800")
                                 ui.label(f"@{p.handle}").classes("text-gray-500 text-sm font-mono")
-                            ui.badge(p.persona_type.value).classes("ml-auto")
+                            ui.badge(p.persona_type.value)
+                            if is_admin:
+                                ui.button(icon="edit", on_click=lambda _, pid=p.id: open_edit_persona(pid)).props(
+                                    "flat dense round size=xs color=grey"
+                                )
                 else:
                     with ui.row().classes("items-center gap-2 py-4 justify-center"):
                         ui.icon("person_add", size="sm").classes("text-gray-300")
@@ -671,4 +761,45 @@ def exercise_detail_page():
                         ui.button("Cancel", on_click=flow_news_dialog.close).props("flat no-caps")
                         ui.button("Add to Flow", on_click=add_news_to_flow).props("unelevated no-caps")
 
+            # Edit flow item dialog
+            with ui.dialog() as edit_flow_dialog:
+                with ui.card().classes("w-full max-w-xl p-4"):
+                    ui.label("Edit Flow Item").classes("text-lg font-bold text-gray-800 mb-3")
+                    edit_flow_content = ui.textarea("Content").classes("w-full").props("autogrow outlined rows=3")
+                    edit_flow_headline_field = ui.input("Headline").props("outlined").classes("w-full")
+                    edit_flow_headline = edit_flow_headline_field
+                    edit_flow_body_field = ui.textarea("Full article (Markdown)").classes("w-full").props(
+                        "autogrow outlined rows=8"
+                    )
+                    edit_flow_body = edit_flow_body_field
+                    with ui.row().classes("justify-end w-full mt-3 gap-2"):
+                        ui.button("Cancel", on_click=edit_flow_dialog.close).props("flat no-caps")
+                        ui.button("Save", on_click=save_flow_item).props("unelevated no-caps")
+
             await load_flow()
+
+        # Edit exercise dialog
+        if is_admin:
+            with ui.dialog() as edit_exercise_dialog:
+                with ui.card().classes("w-96 p-4"):
+                    ui.label("Edit Exercise").classes("text-lg font-bold text-gray-800 mb-3")
+                    edit_ex_name = ui.input("Name").props("outlined").classes("w-full")
+                    edit_ex_desc = ui.textarea("Description").props("outlined").classes("w-full")
+                    with ui.row().classes("justify-end w-full mt-3 gap-2"):
+                        ui.button("Cancel", on_click=edit_exercise_dialog.close).props("flat no-caps")
+                        ui.button("Save", on_click=save_exercise_details).props("unelevated no-caps")
+
+            with ui.dialog() as edit_persona_dialog:
+                with ui.card().classes("w-96 p-4"):
+                    ui.label("Edit Persona").classes("text-lg font-bold text-gray-800 mb-3")
+                    edit_persona_handle = ui.input("Handle").props("outlined").classes("w-full")
+                    edit_persona_display = ui.input("Display Name").props("outlined").classes("w-full")
+                    edit_persona_bio = ui.textarea("Bio").props("outlined").classes("w-full")
+                    edit_persona_type = ui.select(
+                        {t.value: t.value for t in PersonaType},
+                        value="social",
+                        label="Type",
+                    ).props("outlined").classes("w-full")
+                    with ui.row().classes("justify-end w-full mt-3 gap-2"):
+                        ui.button("Cancel", on_click=edit_persona_dialog.close).props("flat no-caps")
+                        ui.button("Save", on_click=save_persona).props("unelevated no-caps")
