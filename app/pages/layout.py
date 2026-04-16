@@ -19,6 +19,7 @@ BRAND_COLOR = "#CA402B"
 
 def apply_theme():
     ui.add_head_html('<link rel="stylesheet" href="/static/theme.css">')
+    ui.add_head_html('<link rel="icon" type="image/png" href="/static/favicon.png">')
     ui.colors(primary=BRAND_COLOR, accent="#7209b7")
 
 
