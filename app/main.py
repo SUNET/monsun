@@ -54,6 +54,7 @@ from app.models import Base, ExerciseMembership, Exercise, ExerciseState
 from app.pages.exercise_detail import exercise_detail_page
 from app.pages.exercises import exercises_page
 from app.pages.feed import feed_page
+from app.pages.help import help_page
 from app.pages.login import login_page
 from app.pages.profile import profile_page
 from app.pages.users import users_page
@@ -136,6 +137,7 @@ exercise_detail_page()
 feed_page()
 users_page()
 profile_page()
+help_page()
 
 ui.run(
     title="Monsun — Media Simulator",

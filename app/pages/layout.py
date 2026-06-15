@@ -347,6 +347,10 @@ async def nav_header():
                 ui.button("Exercises", icon="assignment", on_click=lambda: ui.navigate.to("/exercises")).props(
                     "flat unelevated no-caps"
                 ).style(f"color: {BRAND_COLOR}")
+            if is_admin:
+                ui.button("Help", icon="help_outline", on_click=lambda: ui.navigate.to("/help")).props(
+                    "flat unelevated no-caps"
+                ).style(f"color: {BRAND_COLOR}")
             display = app.storage.user.get("display_name", "")
             if display:
                 ui.separator().props("vertical").classes("mx-2 h-6")
