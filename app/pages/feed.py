@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 
 from nicegui import app, events, ui
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.config import settings, validate_upload_extension
@@ -18,7 +18,7 @@ from app.models import (
     Post,
     PostInteraction,
 )
-from app.pages.layout import nav_header
+from app.pages.layout import markdown_help_button, nav_header
 
 
 def feed_page():
@@ -105,6 +105,18 @@ def feed_page():
             news_image_preview.set_visibility(False)
 
         # --- Helpers ---
+        def parse_schedule(val: str | None):
+            """Parse a datetime-local string into a UTC-aware datetime, or None."""
+            if not val:
+                return None
+            try:
+                dt = datetime.fromisoformat(val)
+            except ValueError:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+
         def get_selected_persona_id():
             if is_admin and social_persona_select.value:
                 return uuid.UUID(social_persona_select.value)
@@ -123,6 +135,10 @@ def feed_page():
             if is_admin and social_persona_select.value:
                 persona_id = uuid.UUID(social_persona_select.value)
 
+            now = datetime.now(timezone.utc)
+            sched_dt = parse_schedule(social_schedule.value) if is_admin else None
+            is_future = sched_dt is not None and sched_dt > now
+
             async with async_session() as session:
                 post = Post(
                     exercise_id=ex_uuid,
@@ -130,17 +146,27 @@ def feed_page():
                     author_user_id=user_uuid,
                     content=post_content.value.strip(),
                     feed_type=FeedType.social,
-                    published_at=datetime.now(timezone.utc),
+                    published_at=sched_dt if is_future else now,
+                    is_published=not is_future,
+                    is_scheduled=is_future,
+                    scheduled_at=sched_dt if is_future else None,
                     image_url=uploaded_image_path[0],
                 )
                 session.add(post)
                 await session.commit()
 
             post_content.value = ""
+            if is_admin:
+                social_schedule.value = ""
             clear_image()
             social_upload.reset()
             social_dialog.close()
             await refresh_social_feed()
+            if is_future:
+                ui.notify(
+                    f"Scheduled for {sched_dt.strftime('%H:%M · %b %d')}",
+                    type="positive",
+                )
 
         # --- Post creation (news) ---
         async def create_news_post():
@@ -151,6 +177,10 @@ def feed_page():
                 ui.notify("Select a news source persona", type="warning")
                 return
 
+            now = datetime.now(timezone.utc)
+            sched_dt = parse_schedule(news_schedule.value)
+            is_future = sched_dt is not None and sched_dt > now
+
             async with async_session() as session:
                 post = Post(
                     exercise_id=ex_uuid,
@@ -160,7 +190,10 @@ def feed_page():
                     headline=news_headline.value.strip(),
                     article_body=news_body.value.strip(),
                     feed_type=FeedType.news,
-                    published_at=datetime.now(timezone.utc),
+                    published_at=sched_dt if is_future else now,
+                    is_published=not is_future,
+                    is_scheduled=is_future,
+                    scheduled_at=sched_dt if is_future else None,
                     is_inject=True,
                     image_url=news_uploaded_image_path[0],
                 )
@@ -170,11 +203,17 @@ def feed_page():
             news_headline.value = ""
             news_summary.value = ""
             news_body.value = ""
+            news_schedule.value = ""
             clear_news_image()
             news_upload.reset()
             news_dialog.close()
             await refresh_news_feed()
-            ui.notify("News article published", type="positive")
+            ui.notify(
+                f"Scheduled for {sched_dt.strftime('%H:%M · %b %d')}"
+                if is_future
+                else "News article published",
+                type="positive",
+            )
 
         # --- Interactions ---
         async def toggle_like(post_id: uuid.UUID):
@@ -311,6 +350,21 @@ def feed_page():
                 await session.commit()
             await refresh_social_feed()
 
+        async def toggle_viral(post_id: uuid.UUID):
+            async with async_session() as session:
+                post = await session.get(Post, post_id)
+                if not post:
+                    return
+                if post.boosted_at:
+                    post.boosted_at = None
+                    msg = "Post no longer boosted"
+                else:
+                    post.boosted_at = datetime.now(timezone.utc)
+                    msg = "Post went viral 🔥"
+                await session.commit()
+            ui.notify(msg, type="positive")
+            await refresh_social_feed()
+
         # --- Load replies for a post ---
         async def load_replies(post_id: uuid.UUID):
             async with async_session() as session:
@@ -328,8 +382,37 @@ def feed_page():
                 )
                 return result.scalars().all()
 
+        # --- Publish scheduled posts whose time has arrived ---
+        async def publish_due_posts():
+            async with async_session() as session:
+                now = datetime.now(timezone.utc)
+                result = await session.execute(
+                    select(Post).where(
+                        Post.exercise_id == ex_uuid,
+                        Post.is_scheduled == True,
+                        Post.is_published == False,
+                        Post.scheduled_at != None,
+                        Post.scheduled_at <= now,
+                    )
+                )
+                due = result.scalars().all()
+                for p in due:
+                    p.is_published = True
+                    if not p.published_at:
+                        p.published_at = p.scheduled_at or now
+                if due:
+                    await session.commit()
+                return len(due)
+
         # --- Load posts helper ---
         async def load_posts(feed_type: FeedType):
+            await publish_due_posts()
+            # Admins also see pending scheduled posts; participants only published.
+            visibility = (
+                or_(Post.is_published == True, Post.is_scheduled == True)
+                if is_admin
+                else (Post.is_published == True)
+            )
             async with async_session() as session:
                 result = await session.execute(
                     select(Post)
@@ -340,11 +423,11 @@ def feed_page():
                     )
                     .where(
                         Post.exercise_id == ex_uuid,
-                        Post.is_published == True,
+                        visibility,
                         Post.parent_post_id == None,
                         Post.feed_type == feed_type,
                     )
-                    .order_by(Post.published_at.desc())
+                    .order_by(Post.boosted_at.desc().nullslast(), Post.published_at.desc())
                     .limit(20)
                 )
                 posts = result.scalars().all()
@@ -393,6 +476,7 @@ def feed_page():
 
         async def poll_for_changes():
             """Only refresh if post count changed — avoids huge WebSocket messages."""
+            await publish_due_posts()
             async with async_session() as session:
                 for i, ft in enumerate([FeedType.social, FeedType.news]):
                     result = await session.execute(
@@ -458,9 +542,21 @@ def feed_page():
                 if i.interaction == InteractionType.like
                 and str(i.user_id) == user_id
             )
+            is_boosted = post.boosted_at is not None
 
-            with ui.card().classes("w-full"):
-                ui.element("div").classes("w-full h-1 bg-orange-600 rounded-t")
+            card_classes = "w-full"
+            if is_boosted:
+                card_classes += " ring-2 ring-orange-400 shadow-lg"
+            with ui.card().classes(card_classes):
+                ui.element("div").classes(
+                    f"w-full {'h-2 bg-orange-500' if is_boosted else 'h-1 bg-orange-600'} rounded-t"
+                )
+                if is_boosted:
+                    with ui.row().classes("items-center gap-1 px-3 pt-2"):
+                        ui.icon("local_fire_department", size="xs").classes("text-orange-500")
+                        ui.label("Viral").classes(
+                            "text-xs font-semibold text-orange-500 uppercase tracking-wide"
+                        )
                 if post.repost_of_id:
                     with ui.row().classes("items-center gap-1 px-3 pt-2"):
                         ui.icon("repeat", size="xs").classes("text-gray-400")
@@ -479,6 +575,11 @@ def feed_page():
                                 ).classes("text-gray-400 text-sm")
                             if post.is_inject:
                                 ui.badge("inject", color="orange").props("dense")
+                            if not post.is_published and post.scheduled_at:
+                                ui.badge(
+                                    f"scheduled {post.scheduled_at.strftime('%H:%M · %b %d')}",
+                                    color="blue",
+                                ).props("dense")
 
                         if post.content:
                             ui.label(post.content).classes("whitespace-pre-wrap text-gray-700")
@@ -512,6 +613,14 @@ def feed_page():
                                 )
                                 if like_count:
                                     ui.label(str(like_count)).classes("text-xs text-gray-500")
+                            if is_admin:
+                                ui.button(
+                                    icon="local_fire_department",
+                                    text="Viral" if is_boosted else "Go viral",
+                                    on_click=lambda _, pid=post.id: toggle_viral(pid),
+                                ).props(
+                                    f"flat dense no-caps size=sm {'color=orange' if is_boosted else 'color=grey'}"
+                                )
                             if is_admin or str(post.author_user_id) == user_id:
                                 ui.button(
                                     icon="edit",
@@ -574,6 +683,11 @@ def feed_page():
                             ui.label(
                                 post.published_at.strftime("%H:%M")
                             ).classes("text-gray-400 text-xs")
+                        if not post.is_published and post.scheduled_at:
+                            ui.badge(
+                                f"scheduled {post.scheduled_at.strftime('%H:%M · %b %d')}",
+                                color="blue",
+                            ).props("dense")
                     if post.headline:
                         ui.label(post.headline).classes("text-lg font-bold text-gray-800 leading-tight")
                     if post.content:
@@ -680,6 +794,10 @@ def feed_page():
                     post_content = ui.textarea(placeholder="What's happening?").classes(
                         "w-full"
                     ).props("autogrow outlined rows=3")
+                    if is_admin:
+                        social_schedule = ui.input(
+                            "Publish at (optional — leave blank to post now)"
+                        ).props("outlined type=datetime-local").classes("w-full")
                     with ui.row().classes("items-center gap-3 w-full"):
                         image_preview = ui.image().classes(
                             "w-20 h-20 rounded-lg object-cover"
@@ -716,8 +834,14 @@ def feed_page():
                     news_headline = ui.input("Headline").props("outlined").classes("w-full")
                     news_summary = ui.input("Summary (shown in feed)").props("outlined").classes("w-full")
                     news_body = ui.textarea("Full article (Markdown)").classes("w-full").props(
-                        "autogrow outlined rows=8"
+                        "autogrow outlined rows=16"
                     )
+                    with ui.row().classes("items-center gap-1 -mt-1"):
+                        ui.label("Markdown supported").classes("text-xs text-gray-400")
+                        markdown_help_button()
+                    news_schedule = ui.input(
+                        "Publish at (optional — leave blank to publish now)"
+                    ).props("outlined type=datetime-local").classes("w-full")
                     with ui.row().classes("items-center gap-3 w-full"):
                         news_image_preview = ui.image().classes(
                             "w-20 h-20 rounded-lg object-cover"
@@ -749,8 +873,11 @@ def feed_page():
                     edit_news_headline = ui.input("Headline").props("outlined").classes("w-full")
                     edit_news_summary = ui.input("Summary (shown in feed)").props("outlined").classes("w-full")
                     edit_news_body = ui.textarea("Full article (Markdown)").classes("w-full").props(
-                        "autogrow outlined rows=8"
+                        "autogrow outlined rows=16"
                     )
+                    with ui.row().classes("items-center gap-1 -mt-1"):
+                        ui.label("Markdown supported").classes("text-xs text-gray-400")
+                        markdown_help_button()
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=edit_news_dialog.close).props("flat no-caps")
                         ui.button("Save", on_click=save_edit_news).props("unelevated no-caps")

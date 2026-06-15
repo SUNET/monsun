@@ -34,6 +34,7 @@ async def refresh_role_from_db():
     app.storage.user["role"] = user.role.value
     app.storage.user["display_name"] = user.display_name
     app.storage.user["username"] = user.username
+    app.storage.user["avatar_url"] = user.avatar_url or ""
     return True
 
 
@@ -41,6 +42,57 @@ def apply_theme():
     ui.add_head_html('<link rel="stylesheet" href="/static/theme.css">')
     ui.add_head_html('<link rel="icon" type="image/png" href="/static/favicon.png">')
     ui.colors(primary=BRAND_COLOR, accent="#7209b7")
+
+
+# Cheat-sheet for the article-body Markdown (NiceGUI ui.markdown / markdown2,
+# extras: fenced-code-blocks + tables). Outer ~~~ fence shows the ``` examples literally.
+MARKDOWN_HELP = """\
+**Supported Markdown** — full article body only:
+
+~~~
+# Heading 1
+## Heading 2
+
+**bold**   *italic*   `inline code`
+
+[link text](https://example.com)
+![image alt](https://example.com/pic.png)
+
+> blockquote
+
+- bullet list item
+1. numbered list item
+
+---
+
+```python
+fenced code block (syntax highlighted)
+```
+
+| Column A | Column B |
+|----------|----------|
+| cell     | cell     |
+~~~
+
+**Not supported:** strikethrough `~~x~~`, task lists `- [ ]`, bare-URL autolinks, footnotes.
+
+Social posts and the feed summary are plain text — no Markdown.
+"""
+
+
+def markdown_help_button():
+    """Small '?' button that opens a dialog explaining the supported Markdown."""
+    with ui.dialog() as dialog:
+        with ui.card().classes("w-full max-w-lg p-6"):
+            ui.label("Markdown formatting").classes(
+                "text-lg font-bold text-gray-800 mb-2"
+            )
+            ui.markdown(MARKDOWN_HELP).classes("prose max-w-none text-sm")
+            with ui.row().classes("justify-end w-full mt-4"):
+                ui.button("Close", on_click=dialog.close).props("flat no-caps")
+    ui.button(icon="help_outline", on_click=dialog.open).props(
+        "flat dense round size=sm color=grey"
+    ).tooltip("Markdown help")
 
 
 async def _find_active_exercise(user_id: str, role: str) -> str | None:
@@ -271,6 +323,9 @@ async def nav_header():
             ui.button(icon="search", on_click=search_dialog.open).props(
                 "flat round"
             ).style(f"color: {BRAND_COLOR}")
+            ui.button("Home", icon="home", on_click=lambda: ui.navigate.to("/")).props(
+                "flat unelevated no-caps"
+            ).style(f"color: {BRAND_COLOR}")
             if is_admin:
                 ui.button("Feed", icon="dynamic_feed", on_click=go_to_feed).props(
                     "flat unelevated no-caps"
@@ -286,7 +341,20 @@ async def nav_header():
             display = app.storage.user.get("display_name", "")
             if display:
                 ui.separator().props("vertical").classes("mx-2 h-6")
-                ui.label(display).classes("text-sm font-medium text-gray-600")
+                avatar_url = app.storage.user.get("avatar_url", "")
+                with ui.row().classes(
+                    "items-center gap-2 cursor-pointer"
+                ).on("click", lambda: ui.navigate.to("/profile")):
+                    if avatar_url:
+                        ui.image(avatar_url).classes(
+                            "w-7 h-7 rounded-full object-cover"
+                        )
+                    else:
+                        ui.avatar(
+                            display[0].upper(), color="primary",
+                            text_color="white", size="sm",
+                        )
+                    ui.label(display).classes("text-sm font-medium text-gray-600")
             ui.button(
                 "Logout", icon="logout",
                 on_click=lambda: (app.storage.user.clear(), ui.navigate.to("/login")),

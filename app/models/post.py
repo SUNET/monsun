@@ -38,6 +38,7 @@ class Post(Base, TimestampMixin):
     is_inject: Mapped[bool] = mapped_column(Boolean, default=False)
     image_url: Mapped[str | None] = mapped_column(String(500))
     sort_order: Mapped[int | None] = mapped_column(default=None)
+    boosted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     persona: Mapped["Persona | None"] = relationship()
     author: Mapped["User"] = relationship(foreign_keys=[author_user_id])

@@ -55,6 +55,7 @@ from app.pages.exercise_detail import exercise_detail_page
 from app.pages.exercises import exercises_page
 from app.pages.feed import feed_page
 from app.pages.login import login_page
+from app.pages.profile import profile_page
 from app.pages.users import users_page
 from app.services.auth import create_default_admin
 
@@ -76,6 +77,12 @@ async def startup():
         await conn.execute(
             sqlalchemy.text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)"
+            )
+        )
+        # Add boosted_at column for "Go viral" feed boosting
+        await conn.execute(
+            sqlalchemy.text(
+                "ALTER TABLE posts ADD COLUMN IF NOT EXISTS boosted_at TIMESTAMPTZ"
             )
         )
     async with async_session() as session:
@@ -122,6 +129,7 @@ exercises_page()
 exercise_detail_page()
 feed_page()
 users_page()
+profile_page()
 
 ui.run(
     title="Monsun — Media Simulator",

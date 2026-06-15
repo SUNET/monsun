@@ -20,6 +20,7 @@ def login_page():
                 app.storage.user["username"] = user.username
                 app.storage.user["display_name"] = user.display_name
                 app.storage.user["role"] = user.role.value
+                app.storage.user["avatar_url"] = user.avatar_url or ""
                 ui.navigate.to("/")
             else:
                 ui.notify("Invalid username or password", type="negative")

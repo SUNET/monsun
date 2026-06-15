@@ -18,7 +18,7 @@ from app.models import (
     Post,
     User,
 )
-from app.pages.layout import nav_header
+from app.pages.layout import markdown_help_button, nav_header
 
 
 def exercise_detail_page():
@@ -140,9 +140,15 @@ def exercise_detail_page():
                 edit_flow_content.value = post.content or ""
                 edit_flow_headline.value = post.headline or ""
                 edit_flow_body.value = post.article_body or ""
+                edit_flow_schedule.value = (
+                    post.scheduled_at.strftime("%Y-%m-%dT%H:%M")
+                    if post.scheduled_at
+                    else ""
+                )
                 # Show/hide news-specific fields
                 edit_flow_headline_field.set_visibility(post.feed_type == FeedType.news)
                 edit_flow_body_field.set_visibility(post.feed_type == FeedType.news)
+                edit_flow_md_help.set_visibility(post.feed_type == FeedType.news)
             edit_flow_dialog.open()
 
         async def save_flow_item():
@@ -153,6 +159,10 @@ def exercise_detail_page():
                     if post.feed_type == FeedType.news:
                         post.headline = edit_flow_headline.value.strip()
                         post.article_body = edit_flow_body.value.strip()
+                    if not post.is_published:
+                        sched_dt = parse_schedule(edit_flow_schedule.value)
+                        post.scheduled_at = sched_dt
+                        post.is_scheduled = sched_dt is not None
                     await session.commit()
             edit_flow_dialog.close()
             await load_flow()
@@ -397,6 +407,13 @@ def exercise_detail_page():
                         ui.badge(type_label, color=accent).props("dense")
                         if item.is_published:
                             ui.icon("check_circle", size="xs").classes("text-green-500")
+                        elif item.scheduled_at:
+                            ui.icon("schedule", size="xs").classes("text-blue-500").tooltip(
+                                f"Scheduled for {item.scheduled_at.strftime('%H:%M · %b %d')}"
+                            )
+                            ui.label(
+                                item.scheduled_at.strftime("%H:%M · %b %d")
+                            ).classes("text-xs text-blue-500")
                         else:
                             ui.icon("schedule", size="xs").classes("text-gray-400")
                         with ui.column().classes("flex-1 gap-0 min-w-0"):
@@ -430,6 +447,18 @@ def exercise_detail_page():
                                 "flat dense round size=xs color=red"
                             ).on("click", lambda _, iid=item.id: delete_flow_item(iid))
 
+        def parse_schedule(val: str | None):
+            """Parse a datetime-local string into a UTC-aware datetime, or None."""
+            if not val:
+                return None
+            try:
+                dt = datetime.fromisoformat(val)
+            except ValueError:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+
         async def add_social_to_flow():
             if not flow_social_persona.value:
                 ui.notify("Select a persona", type="warning")
@@ -438,6 +467,7 @@ def exercise_detail_page():
                 ui.notify("Content or image is required", type="warning")
                 return
             order = await get_next_sort_order()
+            sched_dt = parse_schedule(flow_social_schedule.value)
             async with async_session() as session:
                 post = Post(
                     exercise_id=ex_uuid,
@@ -447,12 +477,15 @@ def exercise_detail_page():
                     feed_type=FeedType.social,
                     is_inject=True,
                     is_published=False,
+                    is_scheduled=sched_dt is not None,
+                    scheduled_at=sched_dt,
                     sort_order=order,
                     image_url=flow_social_image_path[0],
                 )
                 session.add(post)
                 await session.commit()
             flow_social_content.value = ""
+            flow_social_schedule.value = ""
             flow_social_image_path[0] = None
             flow_social_image_preview.set_visibility(False)
             flow_social_upload.reset()
@@ -468,6 +501,7 @@ def exercise_detail_page():
                 ui.notify("Headline is required", type="warning")
                 return
             order = await get_next_sort_order()
+            sched_dt = parse_schedule(flow_news_schedule.value)
             async with async_session() as session:
                 post = Post(
                     exercise_id=ex_uuid,
@@ -479,6 +513,8 @@ def exercise_detail_page():
                     feed_type=FeedType.news,
                     is_inject=True,
                     is_published=False,
+                    is_scheduled=sched_dt is not None,
+                    scheduled_at=sched_dt,
                     sort_order=order,
                     image_url=flow_news_image_path[0],
                 )
@@ -487,6 +523,7 @@ def exercise_detail_page():
             flow_news_headline.value = ""
             flow_news_summary.value = ""
             flow_news_body.value = ""
+            flow_news_schedule.value = ""
             flow_news_image_path[0] = None
             flow_news_image_preview.set_visibility(False)
             flow_news_upload.reset()
@@ -728,6 +765,9 @@ def exercise_detail_page():
                     flow_social_content = ui.textarea("Post content").classes(
                         "w-full"
                     ).props("autogrow outlined rows=3")
+                    flow_social_schedule = ui.input(
+                        "Publish at (optional — blank = publish manually)"
+                    ).props("outlined type=datetime-local").classes("w-full")
                     with ui.row().classes("items-center gap-3 w-full"):
                         flow_social_image_preview = ui.image().classes(
                             "w-20 h-20 rounded-lg object-cover"
@@ -752,8 +792,14 @@ def exercise_detail_page():
                     flow_news_headline = ui.input("Headline").props("outlined").classes("w-full")
                     flow_news_summary = ui.input("Summary (shown in feed)").props("outlined").classes("w-full")
                     flow_news_body = ui.textarea("Full article (Markdown)").classes("w-full").props(
-                        "autogrow outlined rows=8"
+                        "autogrow outlined rows=16"
                     )
+                    with ui.row().classes("items-center gap-1 -mt-1"):
+                        ui.label("Markdown supported").classes("text-xs text-gray-400")
+                        markdown_help_button()
+                    flow_news_schedule = ui.input(
+                        "Publish at (optional — blank = publish manually)"
+                    ).props("outlined type=datetime-local").classes("w-full")
                     with ui.row().classes("items-center gap-3 w-full"):
                         flow_news_image_preview = ui.image().classes(
                             "w-20 h-20 rounded-lg object-cover"
@@ -775,9 +821,16 @@ def exercise_detail_page():
                     edit_flow_headline_field = ui.input("Headline").props("outlined").classes("w-full")
                     edit_flow_headline = edit_flow_headline_field
                     edit_flow_body_field = ui.textarea("Full article (Markdown)").classes("w-full").props(
-                        "autogrow outlined rows=8"
+                        "autogrow outlined rows=16"
                     )
                     edit_flow_body = edit_flow_body_field
+                    edit_flow_md_help = ui.row().classes("items-center gap-1 -mt-1")
+                    with edit_flow_md_help:
+                        ui.label("Markdown supported").classes("text-xs text-gray-400")
+                        markdown_help_button()
+                    edit_flow_schedule = ui.input(
+                        "Publish at (optional — blank = publish manually)"
+                    ).props("outlined type=datetime-local").classes("w-full")
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=edit_flow_dialog.close).props("flat no-caps")
                         ui.button("Save", on_click=save_flow_item).props("unelevated no-caps")
