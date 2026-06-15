@@ -856,7 +856,7 @@ def exercise_detail_page():
                     flow_news_headline = ui.input("Headline").props("outlined").classes("w-full")
                     flow_news_summary = ui.input("Summary (shown in feed)").props("outlined").classes("w-full")
                     flow_news_body = ui.textarea("Full article (Markdown)").classes("w-full").props(
-                        "autogrow outlined rows=16"
+                        "outlined rows=16"
                     )
                     with ui.row().classes("items-center gap-1 -mt-1"):
                         ui.label("Markdown supported").classes("text-xs text-gray-400")
@@ -885,7 +885,7 @@ def exercise_detail_page():
                     edit_flow_headline_field = ui.input("Headline").props("outlined").classes("w-full")
                     edit_flow_headline = edit_flow_headline_field
                     edit_flow_body_field = ui.textarea("Full article (Markdown)").classes("w-full").props(
-                        "autogrow outlined rows=16"
+                        "outlined rows=16"
                     )
                     edit_flow_body = edit_flow_body_field
                     edit_flow_md_help = ui.row().classes("items-center gap-1 -mt-1")

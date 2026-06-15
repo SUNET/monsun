@@ -45,49 +45,58 @@ def apply_theme():
 
 
 # Cheat-sheet for the article-body Markdown (NiceGUI ui.markdown / markdown2,
-# extras: fenced-code-blocks + tables). Outer ~~~ fence shows the ``` examples literally.
-MARKDOWN_HELP = """\
-**Supported Markdown** — full article body only:
-
-~~~
-# Heading 1
-## Heading 2
-
-**bold**   *italic*   `inline code`
-
-[link text](https://example.com)
-![image alt](https://example.com/pic.png)
-
-> blockquote
-
-- bullet list item
-1. numbered list item
-
----
-
-```python
-fenced code block (syntax highlighted)
-```
-
-| Column A | Column B |
-|----------|----------|
-| cell     | cell     |
-~~~
-
-**Not supported:** strikethrough `~~x~~`, task lists `- [ ]`, bare-URL autolinks, footnotes.
-
-Social posts and the feed summary are plain text — no Markdown.
-"""
+# extras: fenced-code-blocks + tables). Each pair is (raw syntax, which is also
+# rendered live so the dialog shows both the syntax and the result).
+MARKDOWN_EXAMPLES = [
+    "# Heading 1",
+    "## Heading 2",
+    "**bold text**",
+    "*italic text*",
+    "`inline code`",
+    "[link text](https://example.com)",
+    "![image alt](https://example.com/pic.png)",
+    "> blockquote",
+    "- bullet item\n- another item",
+    "1. first item\n2. second item",
+    "---",
+    "```python\nprint('hello')\n```",
+    "| Column A | Column B |\n|----------|----------|\n| cell 1   | cell 2   |",
+]
 
 
 def markdown_help_button():
-    """Small '?' button that opens a dialog explaining the supported Markdown."""
+    """Small '?' button that opens a dialog documenting the supported Markdown.
+
+    Shows each feature as the literal syntax (left) next to its rendered
+    result (right), so the syntax itself is documented, not just the look.
+    """
     with ui.dialog() as dialog:
-        with ui.card().classes("w-full max-w-lg p-6"):
+        with ui.card().classes("w-full max-w-2xl p-6"):
             ui.label("Markdown formatting").classes(
-                "text-lg font-bold text-gray-800 mb-2"
+                "text-lg font-bold text-gray-800"
             )
-            ui.markdown(MARKDOWN_HELP).classes("prose max-w-none text-sm")
+            ui.label(
+                "Full article body only. Left = what you type, right = how it looks."
+            ).classes("text-sm text-gray-500 mb-3")
+            with ui.grid(columns=2).classes("w-full gap-x-4 gap-y-2 items-center"):
+                ui.label("Syntax").classes(
+                    "text-xs font-semibold text-gray-400 uppercase tracking-wide"
+                )
+                ui.label("Result").classes(
+                    "text-xs font-semibold text-gray-400 uppercase tracking-wide"
+                )
+                for raw in MARKDOWN_EXAMPLES:
+                    ui.label(raw).classes(
+                        "font-mono text-xs whitespace-pre-wrap bg-gray-100 "
+                        "rounded px-2 py-1 text-gray-700"
+                    )
+                    ui.markdown(raw).classes("prose prose-sm max-w-none")
+            ui.separator().classes("my-3")
+            ui.markdown(
+                "**Not supported:** strikethrough `~~x~~`, task lists `- [ ]`, "
+                "bare-URL autolinks, footnotes.\n\n"
+                "Social posts and the feed summary are plain text — no Markdown."
+            ).classes("text-sm text-gray-500")
             with ui.row().classes("justify-end w-full mt-4"):
                 ui.button("Close", on_click=dialog.close).props("flat no-caps")
     ui.button(icon="help_outline", on_click=dialog.open).props(

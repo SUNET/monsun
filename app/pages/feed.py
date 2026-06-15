@@ -839,7 +839,7 @@ def feed_page():
                     news_headline = ui.input("Headline").props("outlined").classes("w-full")
                     news_summary = ui.input("Summary (shown in feed)").props("outlined").classes("w-full")
                     news_body = ui.textarea("Full article (Markdown)").classes("w-full").props(
-                        "autogrow outlined rows=16"
+                        "outlined rows=16"
                     )
                     with ui.row().classes("items-center gap-1 -mt-1"):
                         ui.label("Markdown supported").classes("text-xs text-gray-400")
@@ -878,7 +878,7 @@ def feed_page():
                     edit_news_headline = ui.input("Headline").props("outlined").classes("w-full")
                     edit_news_summary = ui.input("Summary (shown in feed)").props("outlined").classes("w-full")
                     edit_news_body = ui.textarea("Full article (Markdown)").classes("w-full").props(
-                        "autogrow outlined rows=16"
+                        "outlined rows=16"
                     )
                     with ui.row().classes("items-center gap-1 -mt-1"):
                         ui.label("Markdown supported").classes("text-xs text-gray-400")
