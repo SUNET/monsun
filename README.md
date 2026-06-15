@@ -7,12 +7,16 @@ Monsun is a web-based simulation platform that recreates social media and news e
 **Feeds**
 - Twitter/X-style social media timeline with posts, replies, reposts, and likes
 - News feed with article cards, headlines, summaries, and full Markdown article bodies
+- In-app Markdown reference (syntax + rendered result) next to every article field
 - Image attachments on any post or article
+- Schedule any post or article to publish at a set date and time
+- "Go viral" — admins boost a social post to the top of the feed with a highlight
 - Live auto-refresh during active exercises
 
 **Scenario management**
 - Pre-defined scenario flow — ordered sequence of social posts and news articles
 - Step-through publishing: publish the next inject manually or one at a time
+- Schedule flow items to auto-publish at a set date and time
 - Reorder, edit, and delete flow items before or during an exercise
 - Image attachments on flow items
 - Clone exercises to reuse scenarios (copies personas, members, and full flow)
@@ -20,13 +24,13 @@ Monsun is a web-based simulation platform that recreates social media and news e
 **Personas**
 - Create fictional social media accounts and news sources per exercise
 - Admins post as personas to simulate real accounts
-- Each persona has a handle, display name, bio, and type (social/news/both)
+- Each persona has a handle, display name, bio, type (social/news/both), and optional avatar
 
 **Users and roles**
 - Superadmin: full access — user management, all exercises
 - Admin: create and run exercises, manage personas/members/flows, post as personas
 - Participant: view feeds, post as themselves, like, reply, repost
-- Avatar photos for user accounts
+- Profile pictures: every user manages their own at `/profile`; superadmin can set or remove any user's
 
 **Search**
 - Global search from the header on any page
@@ -36,7 +40,7 @@ Monsun is a web-based simulation platform that recreates social media and news e
 **Participant experience**
 - Streamlined UI — participants see only the feed, no admin controls
 - Auto-redirect to active exercise feed on login
-- Clean header with just search, name, and logout
+- Clean header with search, a Home link, their profile avatar, and logout
 
 ## Quick start
 
@@ -125,8 +129,9 @@ app/
     login.py           # Login page
     exercises.py       # Exercise list (admin: manage, participant: pick)
     exercise_detail.py # Exercise config: personas, members, scenario flow, clone
-    feed.py            # Social + news feed with interactions and editing
+    feed.py            # Social + news feed: interactions, editing, scheduling, "Go viral"
     users.py           # User management with avatars (superadmin)
+    profile.py         # Self-service profile picture (any user)
   services/
     auth.py            # Password hashing (bcrypt), authentication
 static/

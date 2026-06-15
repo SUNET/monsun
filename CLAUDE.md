@@ -34,6 +34,10 @@ Single-process NiceGUI app. All UI is server-rendered Python — no separate fro
 - The login page calls `apply_theme()` directly since it has no header.
 - Participant-facing pages skip admin UI: exercise detail redirects to feed, exercises list links directly to feed, header shows only search + logout.
 - Scenario flow items are Posts with `is_inject=True`, `sort_order != None`, and `is_published=False` until triggered.
+- **Avatars**: users manage their own via `/profile`; superadmin manages any user's via `/users`; personas get one in the create/edit dialogs on `/exercise/{id}`. Stored under `media/` as `avatar_<uuid>.<ext>`, rendered as `ui.image` (rounded) with a letter `ui.avatar` fallback. `User.avatar_url` is nullable; `Persona.avatar_url` is NOT NULL (use `""`, not `None`).
+- **Scheduling**: admins set a future `scheduled_at` (sets `is_scheduled=True`, `is_published=False`) on any new post — social, news, or scenario-flow item. There is no background worker: `publish_due_posts()` in `feed.py` publishes due posts lazily, called on every feed load and from the live-exercise 10s poll. Admins see pending scheduled posts with a badge; participants don't.
+- **Go viral**: admins boost a social post by setting `Post.boosted_at`; the feed orders `boosted_at desc nullslast, published_at desc`, so boosted posts pin to the top with a highlight + "Viral" badge.
+- **Markdown help**: article bodies render via `ui.markdown` (markdown2, extras `fenced-code-blocks` + `tables`). `markdown_help_button()` in `layout.py` is the shared `?`-button + cheat-sheet placed next to every article-body field.
 
 ## Models
 
@@ -42,8 +46,8 @@ Single-process NiceGUI app. All UI is server-rendered Python — no separate fro
 | `User` | `users` | Accounts with role and optional avatar |
 | `Exercise` | `exercises` | A simulation exercise with state machine (draft/ready/live/ended/archived) |
 | `ExerciseMembership` | `exercise_memberships` | Links users to exercises with a role |
-| `Persona` | `personas` | Fictional accounts that admins post as |
-| `Post` | `posts` | Social posts and news articles; also scenario flow items and replies |
+| `Persona` | `personas` | Fictional accounts that admins post as; optional avatar |
+| `Post` | `posts` | Social posts and news articles; also scenario flow items and replies. Supports scheduling (`scheduled_at`/`is_scheduled`) and "Go viral" boosting (`boosted_at`) |
 | `PostInteraction` | `post_interactions` | Likes and reposts per user per post |
 
 ## Pages
@@ -56,6 +60,7 @@ Single-process NiceGUI app. All UI is server-rendered Python — no separate fro
 | `/exercise/{id}` | `exercise_detail.py` | Admin only (participants redirect to feed) |
 | `/feed/{id}` | `feed.py` | Everyone — the main simulation view |
 | `/users` | `users.py` | Superadmin only |
+| `/profile` | `profile.py` | Everyone — manage your own profile picture |
 
 ## Conventions
 
