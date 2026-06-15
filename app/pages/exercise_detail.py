@@ -108,6 +108,13 @@ def exercise_detail_page():
                 edit_persona_display.value = p.display_name
                 edit_persona_bio.value = p.bio or ""
                 edit_persona_type.value = p.persona_type.value
+                edit_persona_avatar[0] = p.avatar_url or None
+                if p.avatar_url:
+                    edit_persona_avatar_preview.set_source(p.avatar_url)
+                    edit_persona_avatar_preview.set_visibility(True)
+                else:
+                    edit_persona_avatar_preview.set_visibility(False)
+            edit_persona_upload.reset()
             edit_persona_dialog.open()
 
         async def save_persona():
@@ -121,10 +128,41 @@ def exercise_detail_page():
                     p.display_name = edit_persona_display.value.strip() or edit_persona_handle.value.strip()
                     p.bio = edit_persona_bio.value.strip()
                     p.persona_type = PersonaType(edit_persona_type.value)
+                    if edit_persona_avatar[0] is not None:
+                        p.avatar_url = edit_persona_avatar[0] or ""
                     await session.commit()
             edit_persona_dialog.close()
             ui.notify("Persona updated", type="positive")
             ui.navigate.to(f"/exercise/{exercise_id}")
+
+        # --- Persona avatar upload ---
+        create_persona_avatar = [None]
+        edit_persona_avatar = [None]
+
+        async def _save_persona_avatar(e: events.UploadEventArguments):
+            ext = validate_upload_extension(e.file.name)
+            if not ext:
+                ui.notify("Only image files (jpg, png, gif, webp) are allowed", type="negative")
+                return None
+            filename = f"avatar_{uuid.uuid4().hex}{ext}"
+            await e.file.save(os.path.join(settings.media_dir, filename))
+            return f"/media/{filename}"
+
+        async def handle_create_persona_avatar(e: events.UploadEventArguments):
+            url = await _save_persona_avatar(e)
+            if url:
+                create_persona_avatar[0] = url
+                create_persona_avatar_preview.set_source(url)
+                create_persona_avatar_preview.set_visibility(True)
+                ui.notify("Avatar uploaded", type="positive")
+
+        async def handle_edit_persona_avatar(e: events.UploadEventArguments):
+            url = await _save_persona_avatar(e)
+            if url:
+                edit_persona_avatar[0] = url
+                edit_persona_avatar_preview.set_source(url)
+                edit_persona_avatar_preview.set_visibility(True)
+                ui.notify("Avatar uploaded", type="positive")
 
         # --- Edit flow item ---
         edit_flow_id = [None]
@@ -289,9 +327,13 @@ def exercise_detail_page():
                     display_name=display_input.value.strip() or handle_input.value.strip(),
                     bio=bio_input.value.strip(),
                     persona_type=PersonaType(type_select.value),
+                    avatar_url=create_persona_avatar[0] or "",
                 )
                 session.add(persona)
                 await session.commit()
+            create_persona_avatar[0] = None
+            create_persona_avatar_preview.set_visibility(False)
+            create_persona_upload.reset()
             persona_dialog.close()
             ui.notify("Persona created", type="positive")
             ui.navigate.to(f"/exercise/{exercise_id}")
@@ -680,7 +722,10 @@ def exercise_detail_page():
                 if exercise.personas:
                     for p in exercise.personas:
                         with ui.row().classes("items-center gap-3 py-2 px-2 rounded-lg hover:bg-gray-50"):
-                            ui.avatar(p.display_name[0].upper(), color="primary", text_color="white", size="sm")
+                            if p.avatar_url:
+                                ui.image(p.avatar_url).classes("w-8 h-8 rounded-full object-cover")
+                            else:
+                                ui.avatar(p.display_name[0].upper(), color="primary", text_color="white", size="sm")
                             with ui.column().classes("gap-0 flex-1"):
                                 ui.label(p.display_name).classes("font-medium text-gray-800")
                                 ui.label(f"@{p.handle}").classes("text-gray-500 text-sm font-mono")
@@ -738,6 +783,25 @@ def exercise_detail_page():
                     value="social",
                     label="Type",
                 ).props("outlined").classes("w-full")
+                ui.label("Avatar").classes("text-sm font-medium text-gray-600 mt-1")
+                with ui.row().classes("items-center gap-3 w-full"):
+                    create_persona_avatar_preview = ui.image().classes(
+                        "w-16 h-16 rounded-full object-cover"
+                    )
+                    create_persona_avatar_preview.set_visibility(False)
+                    with ui.column().classes("gap-1"):
+                        create_persona_upload = ui.upload(
+                            on_upload=handle_create_persona_avatar, auto_upload=True, max_files=1,
+                            label="Upload photo",
+                        ).props('accept="image/*" flat hide-upload-btn').classes("upload-btn")
+                        ui.button(
+                            "Remove", icon="close",
+                            on_click=lambda: (
+                                create_persona_avatar.__setitem__(0, ""),
+                                create_persona_avatar_preview.set_visibility(False),
+                                create_persona_upload.reset(),
+                            ),
+                        ).props("flat no-caps dense size=sm color=grey")
                 with ui.row().classes("justify-end w-full mt-3 gap-2"):
                     ui.button("Cancel", on_click=persona_dialog.close).props("flat no-caps")
                     ui.button("Create", on_click=create_persona).props("unelevated no-caps")
@@ -859,6 +923,25 @@ def exercise_detail_page():
                         value="social",
                         label="Type",
                     ).props("outlined").classes("w-full")
+                    ui.label("Avatar").classes("text-sm font-medium text-gray-600 mt-1")
+                    with ui.row().classes("items-center gap-3 w-full"):
+                        edit_persona_avatar_preview = ui.image().classes(
+                            "w-16 h-16 rounded-full object-cover"
+                        )
+                        edit_persona_avatar_preview.set_visibility(False)
+                        with ui.column().classes("gap-1"):
+                            edit_persona_upload = ui.upload(
+                                on_upload=handle_edit_persona_avatar, auto_upload=True, max_files=1,
+                                label="Upload photo",
+                            ).props('accept="image/*" flat hide-upload-btn').classes("upload-btn")
+                            ui.button(
+                                "Remove", icon="close",
+                                on_click=lambda: (
+                                    edit_persona_avatar.__setitem__(0, ""),
+                                    edit_persona_avatar_preview.set_visibility(False),
+                                    edit_persona_upload.reset(),
+                                ),
+                            ).props("flat no-caps dense size=sm color=grey")
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=edit_persona_dialog.close).props("flat no-caps")
                         ui.button("Save", on_click=save_persona).props("unelevated no-caps")

@@ -499,7 +499,12 @@ def feed_page():
         def get_post_identity(post: Post):
             """Returns (display_name, handle, initial, avatar_url_or_None)."""
             if post.persona:
-                return post.persona.display_name, f"@{post.persona.handle}", post.persona.display_name[0].upper(), None
+                return (
+                    post.persona.display_name,
+                    f"@{post.persona.handle}",
+                    post.persona.display_name[0].upper(),
+                    getattr(post.persona, "avatar_url", None) or None,
+                )
             avatar = getattr(post.author, "avatar_url", None)
             return post.author.display_name, f"@{post.author.username}", post.author.display_name[0].upper(), avatar
 
