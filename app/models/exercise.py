@@ -37,7 +37,9 @@ class Exercise(Base, TimestampMixin):
     )
 
     members: Mapped[list["ExerciseMembership"]] = relationship(back_populates="exercise")
-    personas: Mapped[list["Persona"]] = relationship("Persona", back_populates="exercise")
+    persona_links: Mapped[list["PersonaExercise"]] = relationship(
+        back_populates="exercise", cascade="all, delete-orphan"
+    )
 
 
 class ExerciseMembership(Base):
@@ -53,3 +55,16 @@ class ExerciseMembership(Base):
 
     exercise: Mapped["Exercise"] = relationship(back_populates="members")
     user: Mapped["User"] = relationship()
+
+
+class PersonaExercise(Base):
+    """Junction table linking global personas to exercises."""
+    __tablename__ = "persona_exercises"
+    __table_args__ = (UniqueConstraint("exercise_id", "persona_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_uuid)
+    exercise_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("exercises.id"))
+    persona_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("personas.id"))
+
+    exercise: Mapped["Exercise"] = relationship(back_populates="persona_links")
+    persona: Mapped["Persona"] = relationship()

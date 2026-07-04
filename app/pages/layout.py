@@ -348,6 +348,10 @@ async def nav_header():
                     "flat unelevated no-caps"
                 ).style(f"color: {BRAND_COLOR}")
             if is_admin:
+                ui.button("Personas", icon="people_outline", on_click=lambda: ui.navigate.to("/personas")).props(
+                    "flat unelevated no-caps"
+                ).style(f"color: {BRAND_COLOR}")
+            if is_admin:
                 ui.button("Help", icon="help_outline", on_click=lambda: ui.navigate.to("/help")).props(
                     "flat unelevated no-caps"
                 ).style(f"color: {BRAND_COLOR}")

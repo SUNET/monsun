@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 
 from nicegui import app, events, ui
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete, func, select, update as sa_update
 from sqlalchemy.orm import selectinload
 
 from app.config import settings, validate_upload_extension
@@ -14,8 +14,10 @@ from app.models import (
     ExerciseState,
     FeedType,
     Persona,
+    PersonaExercise,
     PersonaType,
     Post,
+    PostInteraction,
     User,
 )
 from app.pages.layout import markdown_help_button, nav_header
@@ -40,7 +42,6 @@ def exercise_detail_page():
         async with async_session() as session:
             result = await session.execute(
                 select(Exercise)
-                .options(selectinload(Exercise.personas))
                 .where(Exercise.id == ex_uuid)
             )
             exercise = result.scalar_one_or_none()
@@ -209,11 +210,8 @@ def exercise_detail_page():
         # --- Clone exercise ---
         async def clone_exercise():
             async with async_session() as session:
-                # Load source exercise with personas and flow items
                 result = await session.execute(
-                    select(Exercise)
-                    .options(selectinload(Exercise.personas))
-                    .where(Exercise.id == ex_uuid)
+                    select(Exercise).where(Exercise.id == ex_uuid)
                 )
                 src = result.scalar_one()
 
@@ -223,6 +221,11 @@ def exercise_detail_page():
                     )
                 )
                 src_members = result.scalars().all()
+
+                result = await session.execute(
+                    select(PersonaExercise).where(PersonaExercise.exercise_id == ex_uuid)
+                )
+                src_persona_links = result.scalars().all()
 
                 result = await session.execute(
                     select(Post)
@@ -235,7 +238,6 @@ def exercise_detail_page():
                 )
                 src_flow = result.scalars().all()
 
-                # Create new exercise
                 new_ex = Exercise(
                     name=f"{src.name} (copy)",
                     description=src.description,
@@ -245,21 +247,13 @@ def exercise_detail_page():
                 session.add(new_ex)
                 await session.flush()
 
-                # Clone personas — map old id to new id for flow items
-                persona_map = {}
-                for p in src.personas:
-                    new_p = Persona(
+                # Link same global personas to the cloned exercise
+                for pl in src_persona_links:
+                    session.add(PersonaExercise(
                         exercise_id=new_ex.id,
-                        handle=p.handle,
-                        display_name=p.display_name,
-                        bio=p.bio,
-                        persona_type=p.persona_type,
-                    )
-                    session.add(new_p)
-                    await session.flush()
-                    persona_map[p.id] = new_p.id
+                        persona_id=pl.persona_id,
+                    ))
 
-                # Clone members
                 for m in src_members:
                     session.add(ExerciseMembership(
                         exercise_id=new_ex.id,
@@ -267,12 +261,11 @@ def exercise_detail_page():
                         role=m.role,
                     ))
 
-                # Clone flow items (all unpublished)
+                # Clone flow items — personas are global so persona_id stays the same
                 for item in src_flow:
-                    new_persona_id = persona_map.get(item.persona_id) if item.persona_id else None
                     session.add(Post(
                         exercise_id=new_ex.id,
-                        persona_id=new_persona_id,
+                        persona_id=item.persona_id,
                         author_user_id=user_uuid,
                         content=item.content,
                         headline=item.headline,
@@ -290,12 +283,13 @@ def exercise_detail_page():
             ui.notify("Exercise cloned", type="positive")
             ui.navigate.to(f"/exercise/{new_id}")
 
-        # Load personas for flow dialogs
+        # Load personas linked to this exercise
         async def get_personas():
             async with async_session() as session:
                 result = await session.execute(
                     select(Persona)
-                    .where(Persona.exercise_id == ex_uuid)
+                    .join(PersonaExercise, PersonaExercise.persona_id == Persona.id)
+                    .where(PersonaExercise.exercise_id == ex_uuid)
                     .order_by(Persona.handle)
                 )
                 return result.scalars().all()
@@ -322,7 +316,6 @@ def exercise_detail_page():
                 return
             async with async_session() as session:
                 persona = Persona(
-                    exercise_id=ex_uuid,
                     handle=handle_input.value.strip(),
                     display_name=display_input.value.strip() or handle_input.value.strip(),
                     bio=bio_input.value.strip(),
@@ -330,6 +323,8 @@ def exercise_detail_page():
                     avatar_url=create_persona_avatar[0] or "",
                 )
                 session.add(persona)
+                await session.flush()
+                session.add(PersonaExercise(exercise_id=ex_uuid, persona_id=persona.id))
                 await session.commit()
             create_persona_avatar[0] = None
             create_persona_avatar_preview.set_visibility(False)
@@ -337,6 +332,82 @@ def exercise_detail_page():
             persona_dialog.close()
             ui.notify("Persona created", type="positive")
             ui.navigate.to(f"/exercise/{exercise_id}")
+
+        async def open_link_persona_dialog():
+            async with async_session() as session:
+                linked = await session.execute(
+                    select(PersonaExercise.persona_id).where(
+                        PersonaExercise.exercise_id == ex_uuid
+                    )
+                )
+                linked_ids = {row[0] for row in linked.all()}
+                result = await session.execute(select(Persona).order_by(Persona.handle))
+                all_personas = result.scalars().all()
+            available = {
+                str(p.id): f"@{p.handle} — {p.display_name}"
+                for p in all_personas
+                if p.id not in linked_ids
+            }
+            link_persona_select.options = available
+            link_persona_select.value = None
+            link_persona_select.update()
+            link_persona_dialog.open()
+
+        async def link_persona():
+            if not link_persona_select.value:
+                ui.notify("Select a persona", type="warning")
+                return
+            async with async_session() as session:
+                session.add(PersonaExercise(
+                    exercise_id=ex_uuid,
+                    persona_id=uuid.UUID(link_persona_select.value),
+                ))
+                await session.commit()
+            link_persona_dialog.close()
+            ui.notify("Persona linked", type="positive")
+            ui.navigate.to(f"/exercise/{exercise_id}")
+
+        async def unlink_persona(pid: uuid.UUID):
+            async with async_session() as session:
+                result = await session.execute(
+                    select(PersonaExercise).where(
+                        PersonaExercise.exercise_id == ex_uuid,
+                        PersonaExercise.persona_id == pid,
+                    )
+                )
+                link = result.scalar_one_or_none()
+                if link:
+                    await session.delete(link)
+                    await session.commit()
+            ui.notify("Persona unlinked", type="positive")
+            ui.navigate.to(f"/exercise/{exercise_id}")
+
+        async def delete_exercise():
+            async with async_session() as session:
+                post_ids_result = await session.execute(
+                    select(Post.id).where(Post.exercise_id == ex_uuid)
+                )
+                post_ids = [row[0] for row in post_ids_result.all()]
+                if post_ids:
+                    await session.execute(
+                        sa_delete(PostInteraction).where(PostInteraction.post_id.in_(post_ids))
+                    )
+                    await session.execute(
+                        sa_update(Post)
+                        .where(Post.exercise_id == ex_uuid)
+                        .values(parent_post_id=None, repost_of_id=None)
+                    )
+                await session.execute(sa_delete(Post).where(Post.exercise_id == ex_uuid))
+                await session.execute(
+                    sa_delete(ExerciseMembership).where(ExerciseMembership.exercise_id == ex_uuid)
+                )
+                await session.execute(
+                    sa_delete(PersonaExercise).where(PersonaExercise.exercise_id == ex_uuid)
+                )
+                await session.execute(sa_delete(Exercise).where(Exercise.id == ex_uuid))
+                await session.commit()
+            ui.notify("Exercise deleted", type="positive")
+            ui.navigate.to("/exercises")
 
         # --- Member management ---
         async def load_available_users():
@@ -661,9 +732,13 @@ def exercise_detail_page():
                             edit_exercise_dialog.open(),
                         )).props("flat round dense size=sm color=grey")
                 if is_admin:
-                    ui.button("Clone", icon="content_copy", on_click=clone_exercise).props(
-                        "outlined no-caps"
-                    )
+                    with ui.row().classes("gap-2"):
+                        ui.button("Clone", icon="content_copy", on_click=clone_exercise).props(
+                            "outlined no-caps"
+                        )
+                        ui.button("Delete", icon="delete_forever", on_click=lambda: delete_exercise_dialog.open()).props(
+                            "outlined no-caps color=red"
+                        )
 
             if exercise.description:
                 ui.label(exercise.description).classes("text-gray-500 mb-4 ml-12")
@@ -715,12 +790,16 @@ def exercise_detail_page():
                         ui.icon("person_outline", size="sm").classes("text-gray-500")
                         ui.label("Personas").classes("text-lg font-semibold text-gray-800")
                     if is_admin:
-                        ui.button("Add Persona", icon="add", on_click=lambda: persona_dialog.open()).props(
-                            "flat no-caps color=primary"
-                        )
+                        with ui.row().classes("gap-1"):
+                            ui.button("New", icon="add", on_click=lambda: persona_dialog.open()).props(
+                                "flat no-caps color=primary dense"
+                            )
+                            ui.button("Link", icon="link", on_click=open_link_persona_dialog).props(
+                                "flat no-caps color=primary dense"
+                            )
 
-                if exercise.personas:
-                    for p in exercise.personas:
+                if personas:
+                    for p in personas:
                         with ui.row().classes("items-center gap-3 py-2 px-2 rounded-lg hover:bg-gray-50"):
                             if p.avatar_url:
                                 ui.image(p.avatar_url).classes("w-8 h-8 rounded-full object-cover")
@@ -734,10 +813,13 @@ def exercise_detail_page():
                                 ui.button(icon="edit", on_click=lambda _, pid=p.id: open_edit_persona(pid)).props(
                                     "flat dense round size=xs color=grey"
                                 )
+                                ui.button(icon="link_off", on_click=lambda _, pid=p.id: unlink_persona(pid)).props(
+                                    "flat dense round size=xs color=grey"
+                                ).tooltip("Unlink from exercise")
                 else:
                     with ui.row().classes("items-center gap-2 py-4 justify-center"):
                         ui.icon("person_add", size="sm").classes("text-gray-300")
-                        ui.label("No personas defined yet").classes("text-gray-400")
+                        ui.label("No personas linked yet").classes("text-gray-400")
 
             # Members
             with ui.card().classes("w-full p-4"):
@@ -945,3 +1027,28 @@ def exercise_detail_page():
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=edit_persona_dialog.close).props("flat no-caps")
                         ui.button("Save", on_click=save_persona).props("unelevated no-caps")
+
+            with ui.dialog() as link_persona_dialog:
+                with ui.card().classes("w-96 p-4"):
+                    ui.label("Link Persona").classes("text-lg font-bold text-gray-800 mb-3")
+                    ui.label("Link an existing global persona to this exercise.").classes(
+                        "text-sm text-gray-500 -mt-2 mb-2"
+                    )
+                    link_persona_select = ui.select(
+                        {}, label="Select persona"
+                    ).props("outlined").classes("w-full")
+                    with ui.row().classes("justify-end w-full mt-3 gap-2"):
+                        ui.button("Cancel", on_click=link_persona_dialog.close).props("flat no-caps")
+                        ui.button("Link", on_click=link_persona).props("unelevated no-caps")
+
+            with ui.dialog() as delete_exercise_dialog:
+                with ui.card().classes("w-96 p-4"):
+                    with ui.row().classes("items-center gap-2 mb-3"):
+                        ui.icon("warning", size="sm").classes("text-red-500")
+                        ui.label("Delete Exercise").classes("text-lg font-bold text-gray-800")
+                    ui.label(
+                        f'Delete "{exercise.name}"? All posts, flow items, and memberships will be permanently removed. Personas remain in the global registry.'
+                    ).classes("text-gray-600")
+                    with ui.row().classes("justify-end w-full mt-4 gap-2"):
+                        ui.button("Cancel", on_click=delete_exercise_dialog.close).props("flat no-caps")
+                        ui.button("Delete", on_click=delete_exercise).props("unelevated no-caps color=red")

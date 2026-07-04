@@ -15,6 +15,7 @@ from app.models import (
     FeedType,
     InteractionType,
     Persona,
+    PersonaExercise,
     Post,
     PostInteraction,
 )
@@ -58,7 +59,8 @@ def feed_page():
 
             result = await session.execute(
                 select(Persona)
-                .where(Persona.exercise_id == ex_uuid)
+                .join(PersonaExercise, PersonaExercise.persona_id == Persona.id)
+                .where(PersonaExercise.exercise_id == ex_uuid)
                 .order_by(Persona.handle)
             )
             personas = result.scalars().all()

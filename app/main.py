@@ -56,6 +56,7 @@ from app.pages.exercises import exercises_page
 from app.pages.feed import feed_page
 from app.pages.help import help_page
 from app.pages.login import login_page
+from app.pages.personas import personas_page
 from app.pages.profile import profile_page
 from app.pages.users import users_page
 from app.services.auth import create_default_admin
@@ -91,6 +92,30 @@ async def startup():
             sqlalchemy.text(
                 "ALTER TABLE personas ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500) DEFAULT ''"
             )
+        )
+        # Global persona registry: make exercise_id nullable, add junction table
+        await conn.execute(
+            sqlalchemy.text("ALTER TABLE personas ALTER COLUMN exercise_id DROP NOT NULL")
+        )
+        await conn.execute(
+            sqlalchemy.text("""
+                CREATE TABLE IF NOT EXISTS persona_exercises (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    exercise_id UUID NOT NULL REFERENCES exercises(id),
+                    persona_id UUID NOT NULL REFERENCES personas(id),
+                    UNIQUE(exercise_id, persona_id)
+                )
+            """)
+        )
+        # Migrate existing persona-exercise relationships into the junction table
+        await conn.execute(
+            sqlalchemy.text("""
+                INSERT INTO persona_exercises (id, exercise_id, persona_id)
+                SELECT gen_random_uuid(), exercise_id, id
+                FROM personas
+                WHERE exercise_id IS NOT NULL
+                ON CONFLICT DO NOTHING
+            """)
         )
     async with async_session() as session:
         await create_default_admin(session)
@@ -136,6 +161,7 @@ exercises_page()
 exercise_detail_page()
 feed_page()
 users_page()
+personas_page()
 profile_page()
 help_page()
 
