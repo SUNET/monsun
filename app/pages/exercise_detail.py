@@ -407,6 +407,9 @@ def exercise_detail_page():
                 await session.execute(
                     sa_update(Exercise).where(Exercise.cloned_from_id == ex_uuid).values(cloned_from_id=None)
                 )
+                await session.execute(
+                    sa_update(Persona).where(Persona.exercise_id == ex_uuid).values(exercise_id=None)
+                )
                 await session.execute(sa_delete(Exercise).where(Exercise.id == ex_uuid))
                 await session.commit()
             ui.notify("Exercise deleted", type="positive")
