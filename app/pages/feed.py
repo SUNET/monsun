@@ -499,16 +499,17 @@ def feed_page():
                             await refresh_news_feed()
 
         def get_post_identity(post: Post):
-            """Returns (display_name, handle, initial, avatar_url_or_None)."""
+            """Returns (display_name, handle, initial, avatar_url_or_None, bio_or_None)."""
             if post.persona:
                 return (
                     post.persona.display_name,
                     f"@{post.persona.handle}",
                     post.persona.display_name[0].upper(),
                     getattr(post.persona, "avatar_url", None) or None,
+                    post.persona.bio or None,
                 )
             avatar = getattr(post.author, "avatar_url", None)
-            return post.author.display_name, f"@{post.author.username}", post.author.display_name[0].upper(), avatar
+            return post.author.display_name, f"@{post.author.username}", post.author.display_name[0].upper(), avatar, None
 
         def post_avatar(avatar_url, initial, color="primary", text_color="white", size="md"):
             if avatar_url:
@@ -518,7 +519,7 @@ def feed_page():
                 ui.avatar(initial, color=color, text_color=text_color, size=size)
 
         def render_reply(reply: Post):
-            r_name, r_handle, r_initial, r_avatar = get_post_identity(reply)
+            r_name, r_handle, r_initial, r_avatar, r_bio = get_post_identity(reply)
             with ui.row().classes("items-start gap-2 w-full"):
                 post_avatar(r_avatar, r_initial, color="grey-4", text_color="grey-8", size="xs")
                 with ui.column().classes("flex-1 gap-0"):
@@ -529,13 +530,15 @@ def feed_page():
                             ui.label(reply.published_at.strftime("%H:%M")).classes(
                                 "text-gray-400 text-xs"
                             )
+                    if r_bio:
+                        ui.label(r_bio).classes("text-gray-400 text-xs italic")
                     if reply.content:
                         ui.label(reply.content).classes(
                             "whitespace-pre-wrap text-gray-600 text-sm"
                         )
 
         def render_social_post(post: Post, reply_count: int):
-            post_display_name, post_handle, post_initial, post_avatar_url = get_post_identity(post)
+            post_display_name, post_handle, post_initial, post_avatar_url, post_bio = get_post_identity(post)
 
             like_count = sum(
                 1 for i in post.interactions if i.interaction == InteractionType.like
@@ -587,6 +590,9 @@ def feed_page():
                                     f"scheduled {post.scheduled_at.strftime('%H:%M · %b %d')}",
                                     color="blue",
                                 ).props("dense")
+
+                        if post_bio:
+                            ui.label(post_bio).classes("text-gray-400 text-xs italic -mt-1")
 
                         if post.content:
                             ui.label(post.content).classes("whitespace-pre-wrap text-gray-700")
@@ -667,7 +673,7 @@ def feed_page():
                         ).props("flat dense no-caps size=sm color=grey").classes("text-xs")
 
         def render_news_post(post: Post):
-            post_display_name, post_handle, post_initial, post_avatar_url = get_post_identity(post)
+            post_display_name, post_handle, post_initial, post_avatar_url, post_bio = get_post_identity(post)
 
             def show_article():
                 article_source.set_text(f"{post_display_name} {post_handle}")
@@ -695,6 +701,8 @@ def feed_page():
                                 f"scheduled {post.scheduled_at.strftime('%H:%M · %b %d')}",
                                 color="blue",
                             ).props("dense")
+                    if post_bio:
+                        ui.label(post_bio).classes("text-gray-400 text-xs italic -mt-2")
                     if post.headline:
                         ui.label(post.headline).classes("text-lg font-bold text-gray-800 leading-tight")
                     if post.content:
