@@ -22,9 +22,12 @@ uv run python -m app.main
 # Full stack via Docker Compose
 docker compose up --build
 
-# Seed demo data / capture help screenshots (dev scripts)
-uv run python scripts/seed_demo.py
-uv run python scripts/capture_help.py
+# Seed demo data / capture help screenshots (dev scripts).
+# Both need PYTHONPATH set and CLAW_DATABASE_URL exported; capture_help.py also
+# needs the app running on :8081, the demo data seeded, and playwright
+# (one-time: uv run --with playwright python -m playwright install chromium).
+PYTHONPATH=. uv run python scripts/seed_demo.py
+PYTHONPATH=. uv run --with playwright python scripts/capture_help.py
 ```
 
 App runs at http://localhost:8081. Default login: `admin` / `admin`.
@@ -51,7 +54,7 @@ Single-process NiceGUI app. All UI is server-rendered Python — no separate fro
 - Participant-facing pages skip admin UI: exercise detail redirects to feed, exercises list links directly to feed, header shows only search + logout.
 - Scenario flow items are Posts with `is_inject=True`, `sort_order != None`, and `is_published=False` until triggered.
 - **Personas are a global registry**, not owned by one exercise: `Persona.exercise_id` is a legacy column kept nullable for backward compat; the real many-to-many link to exercises is the `PersonaExercise` junction table (`persona_exercises`). Query exercise personas via that junction, not `Persona.exercise_id`.
-- **Avatars**: users manage their own via `/profile`; superadmin manages any user's via `/users`; personas get one in the create/edit dialogs on `/exercise/{id}`. Stored under `media/` as `avatar_<uuid>.<ext>`, rendered as `ui.image` (rounded) with a letter `ui.avatar` fallback. `User.avatar_url` is nullable; `Persona.avatar_url` is NOT NULL (use `""`, not `None`).
+- **Avatars**: users manage their own via `/profile`; superadmin manages any user's via `/users`; personas get one in the create/edit dialogs on `/personas` and on `/exercise/{id}`. Stored under `media/` as `avatar_<uuid>.<ext>`, rendered as `ui.image` (rounded) with a letter `ui.avatar` fallback. `User.avatar_url` is nullable; `Persona.avatar_url` is NOT NULL (use `""`, not `None`).
 - **Scheduling**: admins set a future `scheduled_at` (sets `is_scheduled=True`, `is_published=False`) on any new post — social, news, or scenario-flow item. There is no background worker: `publish_due_posts()` in `feed.py` publishes due posts lazily, called on every feed load and from the live-exercise 10s poll. Admins see pending scheduled posts with a badge; participants don't.
 - **Go viral**: admins boost a social post by setting `Post.boosted_at`; the feed orders `boosted_at desc nullslast, published_at desc`, so boosted posts pin to the top with a highlight + "Viral" badge.
 - **Markdown help**: article bodies render via `ui.markdown` (markdown2, extras `fenced-code-blocks` + `tables`). `markdown_help_button()` in `layout.py` is the shared `?`-button + cheat-sheet placed next to every article-body field.
@@ -81,7 +84,7 @@ Single-process NiceGUI app. All UI is server-rendered Python — no separate fro
 | `/users` | `users.py` | Superadmin only |
 | `/profile` | `profile.py` | Everyone — manage your own profile picture |
 | `/personas` | `personas.py` | Admin — manage the global persona registry |
-| `/help` | `help.py` | Everyone — in-app documentation |
+| `/help` | `help.py` | Admin — in-app documentation (participants redirect to `/`) |
 
 ## Conventions
 
