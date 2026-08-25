@@ -333,6 +333,8 @@ def exercise_detail_page():
             ui.notify("Persona created", type="positive")
             ui.navigate.to(f"/exercise/{exercise_id}")
 
+        link_persona_bios: dict[str, str] = {}
+
         async def open_link_persona_dialog():
             async with async_session() as session:
                 linked = await session.execute(
@@ -343,15 +345,28 @@ def exercise_detail_page():
                 linked_ids = {row[0] for row in linked.all()}
                 result = await session.execute(select(Persona).order_by(Persona.handle))
                 all_personas = result.scalars().all()
-            available = {
-                str(p.id): f"@{p.handle} — {p.display_name}"
-                for p in all_personas
-                if p.id not in linked_ids
-            }
+            available = {}
+            link_persona_bios.clear()
+            for p in all_personas:
+                if p.id in linked_ids:
+                    continue
+                bio = (p.bio or "").strip()
+                label = f"@{p.handle} — {p.display_name}"
+                if bio:
+                    snippet = bio if len(bio) <= 60 else bio[:60].rstrip() + "…"
+                    label += f" · {snippet}"
+                available[str(p.id)] = label
+                link_persona_bios[str(p.id)] = bio
             link_persona_select.options = available
             link_persona_select.value = None
             link_persona_select.update()
+            show_link_persona_bio()
             link_persona_dialog.open()
+
+        def show_link_persona_bio():
+            bio = link_persona_bios.get(link_persona_select.value or "", "")
+            link_persona_bio_label.set_text(bio or "No bio.")
+            link_persona_bio_label.set_visibility(bool(link_persona_select.value))
 
         async def link_persona():
             if not link_persona_select.value:
@@ -1041,8 +1056,13 @@ def exercise_detail_page():
                         "text-sm text-gray-500 -mt-2 mb-2"
                     )
                     link_persona_select = ui.select(
-                        {}, label="Select persona"
+                        {}, label="Select persona",
+                        on_change=lambda _: show_link_persona_bio(),
                     ).props("outlined").classes("w-full")
+                    link_persona_bio_label = ui.label("").classes(
+                        "text-gray-500 text-sm italic mt-2 whitespace-pre-wrap"
+                    )
+                    link_persona_bio_label.set_visibility(False)
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=link_persona_dialog.close).props("flat no-caps")
                         ui.button("Link", on_click=link_persona).props("unelevated no-caps")
