@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Keeping this file current
+
+Update CLAUDE.md as part of the change itself, not as a follow-up, whenever you:
+
+- add a feature or a non-obvious behaviour → add or amend a bullet under **Key patterns**
+- add a page → add a row to the **Pages** table (and follow **Adding a new page**)
+- add a model or table → add a row to the **Models** table
+- add a model column → follow **Adding a model column**; mention it in **Key patterns** if it carries behaviour
+- change setup, env vars, or dev commands → update **Commands** / **Architecture**
+- change a UI or code convention → update **Conventions**
+
+Record the *why* and the gotchas — the things not readable off the code. Delete lines that stop being true; a stale line is worse than a missing one.
+
 ## What this is
 
 Monsun is a media simulation platform for training exercises (built for Sunet). Admins create exercises with fictional personas and pre-scripted content flows — scheduled social posts, breaking news articles, persona-driven narratives. Participants see a simulated Twitter/X-style feed and a news feed and interact with them (like, reply, repost).
@@ -57,6 +70,7 @@ Single-process NiceGUI app. All UI is server-rendered Python — no separate fro
 - **Avatars**: users manage their own via `/profile`; superadmin manages any user's via `/users`; personas get one in the create/edit dialogs on `/personas` and on `/exercise/{id}`. Stored under `media/` as `avatar_<uuid>.<ext>`, rendered as `ui.image` (rounded) with a letter `ui.avatar` fallback. `User.avatar_url` is nullable; `Persona.avatar_url` is NOT NULL (use `""`, not `None`).
 - **Scheduling**: admins set a future `scheduled_at` (sets `is_scheduled=True`, `is_published=False`) on any new post — social, news, or scenario-flow item. There is no background worker: `publish_due_posts()` in `feed.py` publishes due posts lazily, called on every feed load and from the live-exercise 10s poll. Admins see pending scheduled posts with a badge; participants don't.
 - **Go viral**: admins boost a social post by setting `Post.boosted_at`; the feed orders `boosted_at desc nullslast, published_at desc`, so boosted posts pin to the top with a highlight + "Viral" badge.
+- **Reposts**: a repost is a new Post with `repost_of_id` set and empty `content`; the original is rendered as a nested quote card via the `Post.repost_of` many-to-one relationship (eager-load it in feed queries — lazy loads fail under async). Reposting also writes a `PostInteraction` of type `repost`, which is what the counter sums; one repost per user per post.
 - **Markdown help**: article bodies render via `ui.markdown` (markdown2, extras `fenced-code-blocks` + `tables`). `markdown_help_button()` in `layout.py` is the shared `?`-button + cheat-sheet placed next to every article-body field.
 - **Exercise cloning**: cloning an exercise copies its personas (via `persona_links`), members, and full scenario flow; see `cloned_from_id` on `Exercise`.
 
