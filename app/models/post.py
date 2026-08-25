@@ -48,6 +48,11 @@ class Post(Base, TimestampMixin):
         remote_side=[id],
         viewonly=True,
     )
+    repost_of: Mapped["Post | None"] = relationship(
+        foreign_keys=[repost_of_id],
+        remote_side=[id],
+        viewonly=True,
+    )
 
 
 class PostInteraction(Base):

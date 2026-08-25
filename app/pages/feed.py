@@ -339,6 +339,16 @@ def feed_page():
 
         async def do_repost(post_id: uuid.UUID):
             async with async_session() as session:
+                result = await session.execute(
+                    select(PostInteraction).where(
+                        PostInteraction.post_id == post_id,
+                        PostInteraction.user_id == user_uuid,
+                        PostInteraction.interaction == InteractionType.repost,
+                    )
+                )
+                if result.scalar_one_or_none():
+                    ui.notify("Already reposted", type="warning")
+                    return
                 post = Post(
                     exercise_id=ex_uuid,
                     persona_id=get_selected_persona_id(),
@@ -349,6 +359,13 @@ def feed_page():
                     published_at=datetime.now(timezone.utc),
                 )
                 session.add(post)
+                session.add(
+                    PostInteraction(
+                        post_id=post_id,
+                        user_id=user_uuid,
+                        interaction=InteractionType.repost,
+                    )
+                )
                 await session.commit()
             await refresh_social_feed()
 
@@ -422,6 +439,8 @@ def feed_page():
                         selectinload(Post.persona),
                         selectinload(Post.author),
                         selectinload(Post.interactions),
+                        selectinload(Post.repost_of).selectinload(Post.persona),
+                        selectinload(Post.repost_of).selectinload(Post.author),
                     )
                     .where(
                         Post.exercise_id == ex_uuid,
@@ -537,6 +556,30 @@ def feed_page():
                             "whitespace-pre-wrap text-gray-600 text-sm"
                         )
 
+        def render_reposted_original(original: Post):
+            o_name, o_handle, o_initial, o_avatar, o_bio = get_post_identity(original)
+            with ui.card().classes("w-full bg-gray-50 border border-gray-200 shadow-none mt-1"):
+                with ui.row().classes("items-start gap-2 w-full p-2"):
+                    post_avatar(o_avatar, o_initial, color="grey-4", text_color="grey-8", size="sm")
+                    with ui.column().classes("flex-1 gap-1"):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label(o_name).classes("font-semibold text-gray-700 text-sm")
+                            ui.label(o_handle).classes("text-gray-400 text-xs")
+                            if original.published_at:
+                                ui.label(
+                                    original.published_at.strftime("%H:%M · %b %d")
+                                ).classes("text-gray-400 text-xs")
+                        if o_bio:
+                            ui.label(o_bio).classes("text-gray-400 text-xs italic -mt-1")
+                        if original.content:
+                            ui.label(original.content).classes(
+                                "whitespace-pre-wrap text-gray-700 text-sm"
+                            )
+                        if original.image_url:
+                            ui.image(original.image_url).classes(
+                                "w-full max-h-72 object-cover rounded-lg mt-1"
+                            )
+
         def render_social_post(post: Post, reply_count: int):
             post_display_name, post_handle, post_initial, post_avatar_url, post_bio = get_post_identity(post)
 
@@ -601,6 +644,14 @@ def feed_page():
                             ui.image(post.image_url).classes(
                                 "w-full max-h-96 object-cover rounded-lg mt-2"
                             )
+
+                        if post.repost_of_id:
+                            if post.repost_of:
+                                render_reposted_original(post.repost_of)
+                            else:
+                                ui.label("Original post is no longer available").classes(
+                                    "text-gray-400 text-sm italic"
+                                )
 
                         with ui.row().classes("items-center gap-6 mt-2"):
                             with ui.row().classes("items-center gap-1"):
