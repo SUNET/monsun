@@ -2,11 +2,12 @@ import os
 import uuid
 
 from nicegui import app, events, ui
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, select
 
 from app.config import settings, validate_upload_extension
 from app.database import async_session
-from app.models import User, UserRole
+from app.models import ExerciseMembership, Post, PostInteraction, User, UserRole
 from app.pages.layout import nav_header
 from app.services.auth import hash_password
 
@@ -155,19 +156,63 @@ def users_page():
             edit_avatar_preview.set_visibility(False)
 
         # --- Delete user ---
+        async def authored_post_counts(session, uid: uuid.UUID):
+            """Returns (post_count, exercise_count) for posts this user authored."""
+            result = await session.execute(
+                select(
+                    func.count(Post.id), func.count(func.distinct(Post.exercise_id))
+                ).where(Post.author_user_id == uid)
+            )
+            return result.one()
+
         async def confirm_delete(uid: uuid.UUID, display_name: str):
+            async with async_session() as session:
+                post_count, exercise_count = await authored_post_counts(session, uid)
+
+            if post_count:
+                blocked_label.set_text(f'Cannot delete "{display_name}"')
+                blocked_detail.set_text(
+                    f"This user authored {post_count} "
+                    f"{'post' if post_count == 1 else 'posts'} across {exercise_count} "
+                    f"{'exercise' if exercise_count == 1 else 'exercises'}. "
+                    "Delete or move those posts first."
+                )
+                blocked_dialog.open()
+                return
+
             delete_user_id[0] = uid
             delete_confirm_label.set_text(
-                f'Are you sure you want to delete "{display_name}"? This cannot be undone.'
+                f'Are you sure you want to delete "{display_name}"? '
+                "Their exercise memberships, likes and reposts will be removed. "
+                "This cannot be undone."
             )
             delete_dialog.open()
 
         async def do_delete():
+            uid = delete_user_id[0]
             async with async_session() as session:
-                u = await session.get(User, delete_user_id[0])
-                if u:
-                    await session.delete(u)
-                    await session.commit()
+                u = await session.get(User, uid)
+                if not u:
+                    delete_dialog.close()
+                    return
+                # Re-check: posts may have been authored since the dialog opened.
+                post_count, _ = await authored_post_counts(session, uid)
+                if post_count:
+                    delete_dialog.close()
+                    ui.notify(
+                        "User now has authored posts and can no longer be deleted",
+                        type="negative",
+                    )
+                    await load_users()
+                    return
+                await session.execute(
+                    sa_delete(ExerciseMembership).where(ExerciseMembership.user_id == uid)
+                )
+                await session.execute(
+                    sa_delete(PostInteraction).where(PostInteraction.user_id == uid)
+                )
+                await session.delete(u)
+                await session.commit()
             delete_dialog.close()
             await load_users()
             ui.notify("User deleted", type="positive")
@@ -248,5 +293,15 @@ def users_page():
                     with ui.row().classes("justify-end w-full mt-4 gap-2"):
                         ui.button("Cancel", on_click=delete_dialog.close).props("flat no-caps")
                         ui.button("Delete", on_click=do_delete).props("unelevated no-caps color=red")
+
+            # Blocked-delete dialog (user still owns content)
+            with ui.dialog() as blocked_dialog:
+                with ui.card().classes("w-96 p-4"):
+                    with ui.row().classes("items-center gap-2 mb-3"):
+                        ui.icon("block", size="sm").classes("text-red-500")
+                        blocked_label = ui.label("").classes("text-lg font-bold text-gray-800")
+                    blocked_detail = ui.label("").classes("text-gray-600")
+                    with ui.row().classes("justify-end w-full mt-4"):
+                        ui.button("OK", on_click=blocked_dialog.close).props("unelevated no-caps")
 
         await load_users()
