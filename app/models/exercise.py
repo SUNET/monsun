@@ -10,7 +10,6 @@ from app.models.base import Base, TimestampMixin, new_uuid
 
 class ExerciseState(str, enum.Enum):
     draft = "draft"
-    ready = "ready"
     live = "live"
     ended = "ended"
     archived = "archived"

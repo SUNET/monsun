@@ -117,6 +117,10 @@ async def startup():
                 ON CONFLICT DO NOTHING
             """)
         )
+        # The 'ready' exercise state was removed — fold any leftovers back to draft
+        await conn.execute(
+            sqlalchemy.text("UPDATE exercises SET state = 'draft' WHERE state = 'ready'")
+        )
     async with async_session() as session:
         await create_default_admin(session)
 
@@ -135,7 +139,7 @@ async def index():
     if role in ("superadmin", "admin"):
         return ui.navigate.to("/exercises")
 
-    # Participant: find their live (or ready) exercise and go to the feed
+    # Participant: find their live (or draft) exercise and go to the feed
     import uuid
     async with async_session() as session:
         result = await session.execute(
@@ -143,7 +147,7 @@ async def index():
             .join(ExerciseMembership)
             .where(
                 ExerciseMembership.user_id == uuid.UUID(user_id),
-                Exercise.state.in_([ExerciseState.live, ExerciseState.ready, ExerciseState.draft]),
+                Exercise.state.in_([ExerciseState.live, ExerciseState.draft]),
             )
             .order_by(Exercise.updated_at.desc())
             .limit(1)

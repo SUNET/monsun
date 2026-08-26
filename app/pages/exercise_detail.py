@@ -481,23 +481,53 @@ def exercise_detail_page():
         async def open_member_dialog():
             available = await load_available_users()
             member_select.options = available
-            member_select.value = None
+            member_select.value = []
             member_select.update()
+            if not available:
+                ui.notify("Everyone is already a member", type="info")
+                return
             member_dialog.open()
 
+        def select_all_members():
+            member_select.value = list(member_select.options)
+            member_select.update()
+
+        def clear_member_selection():
+            member_select.value = []
+            member_select.update()
+
         async def add_member():
-            if not member_select.value:
-                ui.notify("Select a user", type="warning")
+            selected = member_select.value or []
+            if not selected:
+                ui.notify("Select at least one user", type="warning")
                 return
             async with async_session() as session:
-                membership = ExerciseMembership(
-                    exercise_id=ex_uuid,
-                    user_id=uuid.UUID(member_select.value),
-                )
-                session.add(membership)
+                for user_id in selected:
+                    session.add(ExerciseMembership(
+                        exercise_id=ex_uuid,
+                        user_id=uuid.UUID(user_id),
+                    ))
                 await session.commit()
             member_dialog.close()
-            ui.notify("Member added", type="positive")
+            ui.notify(
+                f"{len(selected)} members added" if len(selected) > 1 else "Member added",
+                type="positive",
+            )
+            ui.navigate.to(f"/exercise/{exercise_id}")
+
+        async def remove_member(user_id: uuid.UUID):
+            async with async_session() as session:
+                result = await session.execute(
+                    select(ExerciseMembership).where(
+                        ExerciseMembership.exercise_id == ex_uuid,
+                        ExerciseMembership.user_id == user_id,
+                    )
+                )
+                membership = result.scalar_one_or_none()
+                if membership:
+                    await session.delete(membership)
+                    await session.commit()
+            ui.notify("Member removed", type="positive")
             ui.navigate.to(f"/exercise/{exercise_id}")
 
         # --- Scenario flow management ---
@@ -769,7 +799,7 @@ def exercise_detail_page():
                     )
                     ui.label(exercise.name).classes("text-2xl font-bold text-gray-800")
                     state_color = {
-                        "draft": "gray", "ready": "blue", "live": "green",
+                        "draft": "gray", "live": "green",
                         "ended": "orange", "archived": "red",
                     }.get(exercise.state.value, "gray")
                     ui.badge(exercise.state.value, color=state_color)
@@ -795,11 +825,7 @@ def exercise_detail_page():
             if is_admin:
                 with ui.row().classes("gap-2 mb-6 ml-12"):
                     if exercise.state == ExerciseState.draft:
-                        ui.button("Mark Ready", icon="check", on_click=lambda: change_state(ExerciseState.ready)).props(
-                            "unelevated no-caps color=primary"
-                        )
-                    elif exercise.state == ExerciseState.ready:
-                        ui.button("Go Live", icon="play_arrow", on_click=lambda: change_state(ExerciseState.live)).props(
+                        ui.button("Go Live", icon="play_arrow", on_click=lambda: go_live_dialog.open()).props(
                             "unelevated no-caps color=green"
                         )
                     elif exercise.state == ExerciseState.live:
@@ -809,7 +835,10 @@ def exercise_detail_page():
                         ui.button("Open Feed", icon="dynamic_feed", on_click=lambda: ui.navigate.to(f"/feed/{exercise_id}")).props(
                             "unelevated no-caps"
                         )
-                    if exercise.state in (ExerciseState.draft, ExerciseState.ready):
+                        ui.button("Back to Draft", icon="undo", on_click=lambda: back_to_draft_dialog.open()).props(
+                            "outlined no-caps"
+                        )
+                    if exercise.state == ExerciseState.draft:
                         ui.button("Open Feed", icon="dynamic_feed", on_click=lambda: ui.navigate.to(f"/feed/{exercise_id}")).props(
                             "outlined no-caps"
                         )
@@ -876,7 +905,7 @@ def exercise_detail_page():
                         ui.icon("group", size="sm").classes("text-gray-500")
                         ui.label("Members").classes("text-lg font-semibold text-gray-800")
                     if is_admin:
-                        ui.button("Add Member", icon="person_add", on_click=open_member_dialog).props(
+                        ui.button("Add Members", icon="person_add", on_click=open_member_dialog).props(
                             "flat no-caps color=primary"
                         )
 
@@ -896,6 +925,13 @@ def exercise_detail_page():
                                 ui.label(m.user.display_name).classes("font-medium text-gray-800")
                                 ui.label(f"@{m.user.username}").classes("text-gray-500 text-sm")
                             ui.badge(m.role.value).classes("ml-auto")
+                            if is_admin:
+                                ui.button(
+                                    icon="person_remove",
+                                    on_click=lambda _, uid=m.user_id: remove_member(uid),
+                                ).props("flat dense round size=xs color=grey").tooltip(
+                                    "Remove from exercise"
+                                )
                 else:
                     with ui.row().classes("items-center gap-2 py-4 justify-center"):
                         ui.icon("group_add", size="sm").classes("text-gray-300")
@@ -938,10 +974,17 @@ def exercise_detail_page():
 
         with ui.dialog() as member_dialog:
             with ui.card().classes("w-96 p-4"):
-                ui.label("Add Member").classes("text-lg font-bold text-gray-800 mb-3")
+                ui.label("Add Members").classes("text-lg font-bold text-gray-800 mb-3")
                 member_select = ui.select(
-                    {}, label="Select user"
-                ).props("outlined").classes("w-full")
+                    {}, label="Select users", multiple=True, with_input=True
+                ).props("outlined use-chips").classes("w-full")
+                with ui.row().classes("items-center gap-2 mt-1"):
+                    ui.button("Select all", on_click=select_all_members).props(
+                        "flat no-caps dense size=sm color=primary"
+                    )
+                    ui.button("Clear", on_click=clear_member_selection).props(
+                        "flat no-caps dense size=sm color=grey"
+                    )
                 with ui.row().classes("justify-end w-full mt-3 gap-2"):
                     ui.button("Cancel", on_click=member_dialog.close).props("flat no-caps")
                     ui.button("Add", on_click=add_member).props("unelevated no-caps")
@@ -1106,6 +1149,36 @@ def exercise_detail_page():
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=link_persona_dialog.close).props("flat no-caps")
                         ui.button("Link", on_click=link_persona).props("unelevated no-caps")
+
+            with ui.dialog() as go_live_dialog:
+                with ui.card().classes("w-96 p-4"):
+                    with ui.row().classes("items-center gap-2 mb-3"):
+                        ui.icon("play_arrow", size="sm").classes("text-green-500")
+                        ui.label("Go Live").classes("text-lg font-bold text-gray-800")
+                    ui.label(
+                        f'Start "{exercise.name}"? Participants will see the feed refresh live and scheduled posts will publish as they fall due.'
+                    ).classes("text-gray-600")
+                    with ui.row().classes("justify-end w-full mt-4 gap-2"):
+                        ui.button("Cancel", on_click=go_live_dialog.close).props("flat no-caps")
+                        ui.button(
+                            "Go Live", on_click=lambda: change_state(ExerciseState.live)
+                        ).props("unelevated no-caps color=green")
+
+            with ui.dialog() as back_to_draft_dialog:
+                with ui.card().classes("w-96 p-4"):
+                    with ui.row().classes("items-center gap-2 mb-3"):
+                        ui.icon("undo", size="sm").classes("text-gray-500")
+                        ui.label("Back to Draft").classes("text-lg font-bold text-gray-800")
+                    ui.label(
+                        f'Return "{exercise.name}" to draft? The feed stops auto-refreshing and '
+                        "scheduled posts only publish when someone opens it. Posts already "
+                        "published stay published."
+                    ).classes("text-gray-600")
+                    with ui.row().classes("justify-end w-full mt-4 gap-2"):
+                        ui.button("Cancel", on_click=back_to_draft_dialog.close).props("flat no-caps")
+                        ui.button(
+                            "Back to Draft", on_click=lambda: change_state(ExerciseState.draft)
+                        ).props("unelevated no-caps")
 
             with ui.dialog() as delete_exercise_dialog:
                 with ui.card().classes("w-96 p-4"):

@@ -108,21 +108,21 @@ def help_page():
             _section(3, "Create an exercise")
             _p(
                 "From **Exercises** in the header, click **New Exercise** and give it "
-                "a name and description. An exercise moves through five states:"
+                "a name and description. An exercise moves through four states:"
             )
             _p(
                 "| State | Meaning |\n"
                 "|---|---|\n"
                 "| `draft` | Being built. Default for new and cloned exercises. |\n"
-                "| `ready` | Prepared, waiting to start. |\n"
                 "| `live` | Running — the feed auto-refreshes for everyone. |\n"
                 "| `ended` | Finished. The feed stays readable. |\n"
                 "| `archived` | Kept for the record. |"
             )
             _p(
                 "The buttons on the exercise page walk the states forward: "
-                "**Mark Ready → Go Live → End Exercise**. **Open Feed** is available "
-                "once the exercise is live or ended."
+                "**Go Live → End Exercise** (Go Live asks for confirmation). "
+                "A live exercise can be pulled back with **Back to Draft**. "
+                "**Open Feed** is available while the exercise is draft or live."
             )
             _shot("02-exercises.png", "The exercises list (admin view).")
 
@@ -165,7 +165,11 @@ def help_page():
                 "registry and links it in one step; the unlink button detaches it "
                 "from this exercise without deleting it.\n"
                 "- **Members** — the participants who can open this exercise's feed. "
-                "Anyone not a member is refused, even with a direct link."
+                "**Add Members** takes several users at once (type to filter, or "
+                "**Select all**). "
+                "Anyone not a member is refused, even with a direct link. The remove "
+                "button next to a member revokes access; anything they already posted "
+                "stays in the feed."
             )
             _shot(
                 "03-exercise-detail.png",

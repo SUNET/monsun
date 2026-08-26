@@ -109,7 +109,7 @@ async def _find_active_exercise(user_id: str, role: str) -> str | None:
         if role in ("superadmin", "admin"):
             result = await session.execute(
                 select(Exercise)
-                .where(Exercise.state.in_([ExerciseState.live, ExerciseState.ready, ExerciseState.draft]))
+                .where(Exercise.state.in_([ExerciseState.live, ExerciseState.draft]))
                 .order_by(Exercise.updated_at.desc())
                 .limit(1)
             )
@@ -119,7 +119,7 @@ async def _find_active_exercise(user_id: str, role: str) -> str | None:
                 .join(ExerciseMembership)
                 .where(
                     ExerciseMembership.user_id == uuid.UUID(user_id),
-                    Exercise.state.in_([ExerciseState.live, ExerciseState.ready, ExerciseState.draft]),
+                    Exercise.state.in_([ExerciseState.live, ExerciseState.draft]),
                 )
                 .order_by(Exercise.updated_at.desc())
                 .limit(1)
@@ -243,7 +243,7 @@ async def nav_header():
                 ui.label("Exercises").classes("text-xs font-semibold text-gray-400 uppercase tracking-wide mt-3 mb-1")
                 for ex in exercises:
                     state_color = {
-                        "draft": "gray", "ready": "blue", "live": "green",
+                        "draft": "gray", "live": "green",
                         "ended": "orange", "archived": "red",
                     }.get(ex.state.value, "gray")
                     with ui.row().classes(

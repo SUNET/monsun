@@ -847,7 +847,7 @@ def feed_page():
                         ).props("flat round")
                     ui.label(exercise.name).classes("text-xl font-bold text-gray-800")
                     state_color = {
-                        "draft": "gray", "ready": "blue", "live": "green",
+                        "draft": "gray", "live": "green",
                         "ended": "orange", "archived": "red",
                     }.get(exercise.state.value, "gray")
                     if is_admin:

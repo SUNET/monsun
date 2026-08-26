@@ -10,7 +10,6 @@ from app.pages.layout import nav_header
 
 STATE_STYLES = {
     "draft": ("gray", "draft_orders"),
-    "ready": ("blue", "check_circle_outline"),
     "live": ("green", "circle"),
     "ended": ("orange", "stop_circle"),
     "archived": ("red", "archive"),
@@ -56,7 +55,7 @@ def exercises_page():
                 if not is_admin:
                     active = [
                         ex for ex in exs
-                        if ex.state in (ExerciseState.live, ExerciseState.ready)
+                        if ex.state == ExerciseState.live
                     ]
                     if len(active) == 1:
                         ui.navigate.to(f"/feed/{active[0].id}")
