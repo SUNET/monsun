@@ -168,6 +168,29 @@ def exercise_detail_page():
         # --- Edit flow item ---
         edit_flow_id = [None]
         edit_flow_type = [None]
+        edit_flow_image_path = [None]
+
+        def show_edit_flow_image(path: str | None):
+            edit_flow_image_path[0] = path
+            if path:
+                edit_flow_image_preview.set_source(path)
+            edit_flow_image_preview.set_visibility(bool(path))
+            edit_flow_image_remove.set_visibility(bool(path))
+
+        async def handle_edit_flow_image(e: events.UploadEventArguments):
+            ext = validate_upload_extension(e.file.name)
+            if not ext:
+                ui.notify("Only image files (jpg, png, gif, webp) are allowed", type="negative")
+                return
+            filename = f"{uuid.uuid4().hex}{ext}"
+            filepath = os.path.join(settings.media_dir, filename)
+            await e.file.save(filepath)
+            show_edit_flow_image(f"/media/{filename}")
+            ui.notify("Image attached", type="positive")
+
+        def remove_edit_flow_image():
+            show_edit_flow_image(None)
+            edit_flow_upload.reset()
 
         async def open_edit_flow(post_id: uuid.UUID):
             async with async_session() as session:
@@ -188,6 +211,9 @@ def exercise_detail_page():
                 edit_flow_headline_field.set_visibility(post.feed_type == FeedType.news)
                 edit_flow_body_field.set_visibility(post.feed_type == FeedType.news)
                 edit_flow_md_help.set_visibility(post.feed_type == FeedType.news)
+                image_url = post.image_url
+            edit_flow_upload.reset()
+            show_edit_flow_image(image_url)
             edit_flow_dialog.open()
 
         async def save_flow_item():
@@ -195,6 +221,7 @@ def exercise_detail_page():
                 post = await session.get(Post, edit_flow_id[0])
                 if post:
                     post.content = edit_flow_content.value.strip()
+                    post.image_url = edit_flow_image_path[0]
                     if post.feed_type == FeedType.news:
                         post.headline = edit_flow_headline.value.strip()
                         post.article_body = edit_flow_body.value.strip()
@@ -782,7 +809,7 @@ def exercise_detail_page():
                         ui.button("Open Feed", icon="dynamic_feed", on_click=lambda: ui.navigate.to(f"/feed/{exercise_id}")).props(
                             "unelevated no-caps"
                         )
-                    if exercise.state in (ExerciseState.draft, ExerciseState.ready, ExerciseState.live):
+                    if exercise.state in (ExerciseState.draft, ExerciseState.ready):
                         ui.button("Open Feed", icon="dynamic_feed", on_click=lambda: ui.navigate.to(f"/feed/{exercise_id}")).props(
                             "outlined no-caps"
                         )
@@ -998,6 +1025,19 @@ def exercise_detail_page():
                     edit_flow_schedule = ui.input(
                         "Publish at (optional — blank = publish manually)"
                     ).props("outlined type=datetime-local").classes("w-full")
+                    with ui.row().classes("items-center gap-3 w-full"):
+                        edit_flow_image_preview = ui.image().classes(
+                            "w-20 h-20 rounded-lg object-cover"
+                        )
+                        edit_flow_image_preview.set_visibility(False)
+                        edit_flow_upload = ui.upload(
+                            on_upload=handle_edit_flow_image, auto_upload=True, max_files=1,
+                            label="Replace image",
+                        ).props('accept="image/*" flat hide-upload-btn').classes("upload-btn")
+                        edit_flow_image_remove = ui.button(
+                            "Remove image", icon="close", on_click=remove_edit_flow_image
+                        ).props("flat no-caps dense color=red")
+                        edit_flow_image_remove.set_visibility(False)
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=edit_flow_dialog.close).props("flat no-caps")
                         ui.button("Save", on_click=save_flow_item).props("unelevated no-caps")

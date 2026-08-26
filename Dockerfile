@@ -9,6 +9,7 @@ RUN uv sync --frozen --no-dev
 
 COPY app/ app/
 COPY static/ static/
+COPY scripts/ scripts/
 
 EXPOSE 8081
 

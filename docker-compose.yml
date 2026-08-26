@@ -6,14 +6,14 @@ services:
       POSTGRES_PASSWORD: claw
       POSTGRES_DB: claw
     ports:
-      - "5432:5432"
+      - "${MONSUN_DB_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
   app:
     build: .
     ports:
-      - "8081:8081"
+      - "${MONSUN_APP_PORT:-8081}:8081"
     environment:
       CLAW_DATABASE_URL: postgresql+asyncpg://claw:claw@db:5432/claw
       CLAW_SECRET_KEY: change-me-in-production

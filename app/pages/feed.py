@@ -244,6 +244,52 @@ def feed_page():
         # --- Edit state ---
         edit_post_id = [None]
         edit_post_feed_type = [None]
+        edit_image_path = [None]
+        edit_news_image_path = [None]
+
+        def show_edit_image(path: str | None):
+            edit_image_path[0] = path
+            if path:
+                edit_image_preview.set_source(path)
+            edit_image_preview.set_visibility(bool(path))
+            edit_image_remove.set_visibility(bool(path))
+
+        async def handle_edit_upload(e: events.UploadEventArguments):
+            ext = validate_upload_extension(e.file.name)
+            if not ext:
+                ui.notify("Only image files (jpg, png, gif, webp) are allowed", type="negative")
+                return
+            filename = f"{uuid.uuid4().hex}{ext}"
+            filepath = os.path.join(settings.media_dir, filename)
+            await e.file.save(filepath)
+            show_edit_image(f"/media/{filename}")
+            ui.notify("Image attached", type="positive")
+
+        def remove_edit_image():
+            show_edit_image(None)
+            edit_social_upload.reset()
+
+        def show_edit_news_image(path: str | None):
+            edit_news_image_path[0] = path
+            if path:
+                edit_news_image_preview.set_source(path)
+            edit_news_image_preview.set_visibility(bool(path))
+            edit_news_image_remove.set_visibility(bool(path))
+
+        async def handle_edit_news_upload(e: events.UploadEventArguments):
+            ext = validate_upload_extension(e.file.name)
+            if not ext:
+                ui.notify("Only image files (jpg, png, gif, webp) are allowed", type="negative")
+                return
+            filename = f"{uuid.uuid4().hex}{ext}"
+            filepath = os.path.join(settings.media_dir, filename)
+            await e.file.save(filepath)
+            show_edit_news_image(f"/media/{filename}")
+            ui.notify("Image attached", type="positive")
+
+        def remove_edit_news_image():
+            show_edit_news_image(None)
+            edit_news_upload.reset()
 
         async def open_edit_social(post_id: uuid.UUID):
             async with async_session() as session:
@@ -251,7 +297,10 @@ def feed_page():
                 if not post:
                     return
                 edit_social_content.value = post.content or ""
+                image_url = post.image_url
             edit_post_id[0] = post_id
+            edit_social_upload.reset()
+            show_edit_image(image_url)
             edit_social_dialog.open()
 
         async def save_edit_social():
@@ -259,6 +308,7 @@ def feed_page():
                 post = await session.get(Post, edit_post_id[0])
                 if post:
                     post.content = edit_social_content.value.strip()
+                    post.image_url = edit_image_path[0]
                     await session.commit()
             edit_social_dialog.close()
             await refresh_social_feed()
@@ -272,7 +322,10 @@ def feed_page():
                 edit_news_headline.value = post.headline or ""
                 edit_news_summary.value = post.content or ""
                 edit_news_body.value = post.article_body or ""
+                image_url = post.image_url
             edit_post_id[0] = post_id
+            edit_news_upload.reset()
+            show_edit_news_image(image_url)
             edit_news_dialog.open()
 
         async def save_edit_news():
@@ -285,6 +338,7 @@ def feed_page():
                     post.headline = edit_news_headline.value.strip()
                     post.content = edit_news_summary.value.strip()
                     post.article_body = edit_news_body.value.strip()
+                    post.image_url = edit_news_image_path[0]
                     await session.commit()
             edit_news_dialog.close()
             await refresh_news_feed()
@@ -928,6 +982,19 @@ def feed_page():
                     edit_social_content = ui.textarea(placeholder="Edit your post...").classes(
                         "w-full"
                     ).props("autogrow outlined rows=3")
+                    with ui.row().classes("items-center gap-3 w-full"):
+                        edit_image_preview = ui.image().classes(
+                            "w-20 h-20 rounded-lg object-cover"
+                        )
+                        edit_image_preview.set_visibility(False)
+                        edit_social_upload = ui.upload(
+                            on_upload=handle_edit_upload, auto_upload=True, max_files=1,
+                            label="Replace image",
+                        ).props('accept="image/*" flat hide-upload-btn').classes("upload-btn")
+                        edit_image_remove = ui.button(
+                            "Remove image", icon="close", on_click=remove_edit_image
+                        ).props("flat no-caps dense color=red")
+                        edit_image_remove.set_visibility(False)
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=edit_social_dialog.close).props("flat no-caps")
                         ui.button("Save", on_click=save_edit_social).props("unelevated no-caps")
@@ -944,6 +1011,19 @@ def feed_page():
                     with ui.row().classes("items-center gap-1 -mt-1"):
                         ui.label("Markdown supported").classes("text-xs text-gray-400")
                         markdown_help_button()
+                    with ui.row().classes("items-center gap-3 w-full"):
+                        edit_news_image_preview = ui.image().classes(
+                            "w-20 h-20 rounded-lg object-cover"
+                        )
+                        edit_news_image_preview.set_visibility(False)
+                        edit_news_upload = ui.upload(
+                            on_upload=handle_edit_news_upload, auto_upload=True, max_files=1,
+                            label="Replace image",
+                        ).props('accept="image/*" flat hide-upload-btn').classes("upload-btn")
+                        edit_news_image_remove = ui.button(
+                            "Remove image", icon="close", on_click=remove_edit_news_image
+                        ).props("flat no-caps dense color=red")
+                        edit_news_image_remove.set_visibility(False)
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=edit_news_dialog.close).props("flat no-caps")
                         ui.button("Save", on_click=save_edit_news).props("unelevated no-caps")
