@@ -477,16 +477,37 @@ def feed_page():
                     await session.commit()
                 return len(due)
 
-        # --- Load posts helper ---
-        async def load_posts(feed_type: FeedType):
-            await publish_due_posts()
-            # Admins also see pending scheduled posts; participants only published.
-            visibility = (
+        # --- Feed visibility: admins also see pending scheduled posts (injects
+        # waiting for their time); participants only see published ones. ---
+        def feed_visibility():
+            return (
                 or_(Post.is_published == True, Post.is_scheduled == True)
                 if is_admin
                 else (Post.is_published == True)
             )
+
+        # Pending scheduled posts have no published_at yet, so sort on the time
+        # they will actually appear — otherwise every inject collides on NULL and
+        # the order (and with it, which ones survive the page limit) is arbitrary.
+        FEED_ORDER_TS = func.coalesce(Post.published_at, Post.scheduled_at, Post.created_at)
+
+        PAGE_SIZE = 20
+        shown_limit = {FeedType.social: PAGE_SIZE, FeedType.news: PAGE_SIZE}
+
+        # --- Load posts helper ---
+        async def load_posts(feed_type: FeedType):
+            await publish_due_posts()
+            visibility = feed_visibility()
             async with async_session() as session:
+                base_where = (
+                    Post.exercise_id == ex_uuid,
+                    visibility,
+                    Post.parent_post_id == None,
+                    Post.feed_type == feed_type,
+                )
+                total = await session.scalar(
+                    select(func.count()).select_from(Post).where(*base_where)
+                )
                 result = await session.execute(
                     select(Post)
                     .options(
@@ -496,14 +517,9 @@ def feed_page():
                         selectinload(Post.repost_of).selectinload(Post.persona),
                         selectinload(Post.repost_of).selectinload(Post.author),
                     )
-                    .where(
-                        Post.exercise_id == ex_uuid,
-                        visibility,
-                        Post.parent_post_id == None,
-                        Post.feed_type == feed_type,
-                    )
-                    .order_by(Post.boosted_at.desc().nullslast(), Post.published_at.desc())
-                    .limit(20)
+                    .where(*base_where)
+                    .order_by(Post.boosted_at.desc().nullslast(), FEED_ORDER_TS.desc())
+                    .limit(shown_limit[feed_type])
                 )
                 posts = result.scalars().all()
 
@@ -517,12 +533,27 @@ def feed_page():
                     )
                     reply_counts = dict(rc_result.all())
 
-            return posts, reply_counts
+            return posts, reply_counts, total or 0
+
+        def render_load_more(feed_type: FeedType, shown: int, total: int, refresh):
+            """Page limit exists to keep WebSocket payloads sane; without this
+            button the posts past it are simply unreachable."""
+            if shown >= total:
+                return
+
+            async def load_more():
+                shown_limit[feed_type] += PAGE_SIZE
+                await refresh()
+
+            with ui.row().classes("w-full justify-center py-2"):
+                ui.button(
+                    f"Load more ({total - shown} more)", on_click=load_more
+                ).props("outlined no-caps dense")
 
         # --- Render social feed ---
         async def refresh_social_feed():
             social_feed_container.clear()
-            posts, reply_counts = await load_posts(FeedType.social)
+            posts, reply_counts, total = await load_posts(FeedType.social)
             with social_feed_container:
                 if not posts:
                     with ui.column().classes("items-center py-12 w-full"):
@@ -530,11 +561,14 @@ def feed_page():
                         ui.label("No posts yet. Be the first!").classes("text-gray-400 mt-2")
                 for post in posts:
                     render_social_post(post, reply_counts.get(post.id, 0))
+                render_load_more(
+                    FeedType.social, len(posts), total, refresh_social_feed
+                )
 
         # --- Render news feed ---
         async def refresh_news_feed():
             news_feed_container.clear()
-            posts, _ = await load_posts(FeedType.news)
+            posts, _, total = await load_posts(FeedType.news)
             with news_feed_container:
                 if not posts:
                     with ui.column().classes("items-center py-12 w-full"):
@@ -542,6 +576,7 @@ def feed_page():
                         ui.label("No news articles yet").classes("text-gray-400 mt-2")
                 for post in posts:
                     render_news_post(post)
+                render_load_more(FeedType.news, len(posts), total, refresh_news_feed)
 
         last_post_count = [0, 0]  # [social, news]
 
@@ -559,7 +594,8 @@ def feed_page():
                         .select_from(Post)
                         .where(
                             Post.exercise_id == ex_uuid,
-                            Post.is_published == True,
+                            feed_visibility(),
+                            Post.parent_post_id == None,
                             Post.feed_type == ft,
                         )
                     )
