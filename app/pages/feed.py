@@ -158,8 +158,9 @@ def feed_page():
                 await session.commit()
 
             post_content.value = ""
-            if is_admin:
-                social_schedule.value = ""
+            # social_schedule is kept on purpose: the browser keeps showing the
+            # previous value after the dialog closes, so clearing it here only
+            # desynced server and client and dropped the time on the next post.
             clear_image()
             social_upload.reset()
             social_dialog.close()
@@ -205,7 +206,7 @@ def feed_page():
             news_headline.value = ""
             news_summary.value = ""
             news_body.value = ""
-            news_schedule.value = ""
+            # news_schedule is kept on purpose — see create_post.
             clear_news_image()
             news_upload.reset()
             news_dialog.close()
@@ -301,6 +302,9 @@ def feed_page():
             edit_post_id[0] = post_id
             edit_social_upload.reset()
             show_edit_image(image_url)
+            # Force the browser input to take the server value (see the same
+            # call in exercise_detail.open_edit_flow for why).
+            edit_social_content.run_method("updateValue")
             edit_social_dialog.open()
 
         async def save_edit_social():
@@ -326,6 +330,8 @@ def feed_page():
             edit_post_id[0] = post_id
             edit_news_upload.reset()
             show_edit_news_image(image_url)
+            for field in (edit_news_headline, edit_news_summary, edit_news_body):
+                field.run_method("updateValue")
             edit_news_dialog.open()
 
         async def save_edit_news():

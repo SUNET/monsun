@@ -23,6 +23,56 @@ from app.models import (
 from app.pages.layout import markdown_help_button, nav_header
 
 
+FLOW_DRAG_JS = """
+(() => {
+  if (window.__flowDragReady) return;
+  window.__flowDragReady = true;
+  let dragId = null;
+  const rows = () => document.querySelectorAll('.flow-row');
+  const clearMarks = () => rows().forEach((r) => {
+    r.classList.remove('flow-drop-above', 'flow-drop-below', 'flow-dragging');
+  });
+  const rowAt = (e) => (e.target.closest ? e.target.closest('.flow-row') : null);
+  const onUpperHalf = (row, e) => {
+    const rect = row.getBoundingClientRect();
+    return e.clientY < rect.top + rect.height / 2;
+  };
+  document.addEventListener('dragstart', (e) => {
+    const row = rowAt(e);
+    if (!row) return;
+    if (e.target.closest('button')) { e.preventDefault(); return; }
+    dragId = row.dataset.id;
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', dragId); } catch (err) {}
+    row.classList.add('flow-dragging');
+  });
+  document.addEventListener('dragover', (e) => {
+    const row = rowAt(e);
+    if (!dragId || !row || row.dataset.id === dragId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    rows().forEach((r) => r.classList.remove('flow-drop-above', 'flow-drop-below'));
+    row.classList.add(onUpperHalf(row, e) ? 'flow-drop-above' : 'flow-drop-below');
+  });
+  document.addEventListener('drop', (e) => {
+    const row = rowAt(e);
+    if (dragId && row && row.dataset.id !== dragId) {
+      e.preventDefault();
+      const before = onUpperHalf(row, e);
+      // Move the row right away so the drop feels instant; the server
+      // re-renders the list afterwards to fix the #N numbering.
+      const dragged = document.querySelector('.flow-row[data-id="' + dragId + '"]');
+      if (dragged) row.parentNode.insertBefore(dragged, before ? row : row.nextSibling);
+      emitEvent('flow_reorder', { source: dragId, target: row.dataset.id, before: before });
+    }
+    dragId = null;
+    clearMarks();
+  });
+  document.addEventListener('dragend', () => { dragId = null; clearMarks(); });
+})();
+"""
+
+
 def exercise_detail_page():
     @ui.page("/exercise/{exercise_id}")
     async def exercise_detail(exercise_id: str):
@@ -214,6 +264,17 @@ def exercise_detail_page():
                 image_url = post.image_url
             edit_flow_upload.reset()
             show_edit_flow_image(image_url)
+            # Force the browser inputs to take the server-side values. When the
+            # dialog unmounts, NiceGUI's input component writes the browser's
+            # own value back over the element's props, so re-opening it with an
+            # unchanged server value would keep showing the stale text.
+            for field in (
+                edit_flow_content,
+                edit_flow_headline,
+                edit_flow_body,
+                edit_flow_schedule,
+            ):
+                field.run_method("updateValue")
             edit_flow_dialog.open()
 
         async def save_flow_item():
@@ -543,7 +604,34 @@ def exercise_detail_page():
                 )
                 return (result.scalar() or 0) + 1
 
-        async def load_flow():
+        def restore_scroll(scroll_y) -> None:
+            """Put the window scroll offset back after a list rebuild."""
+            if scroll_y is None:
+                return
+            ui.run_javascript(
+                # Vue patches the DOM on its own tick, so wait a frame (and once
+                # more with a timer) before scrolling back.
+                f"const y = {float(scroll_y)};"
+                "requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));"
+                "setTimeout(() => window.scrollTo(0, y), 50);"
+            )
+
+        async def load_flow(preserve_scroll: bool = True):
+            """Re-render the scenario flow list.
+
+            Rebuilding the list empties the page for a moment, and the browser
+            clamps the scroll position to the (now much shorter) document — which
+            dumped the admin at the bottom of the page after every move/edit. So
+            grab the scroll offset first and put it back once the list is redrawn.
+            """
+            scroll_y = None
+            if preserve_scroll:
+                try:
+                    scroll_y = await ui.run_javascript(
+                        "window.scrollY || document.scrollingElement.scrollTop", timeout=1.0
+                    )
+                except Exception:  # client gone or slow — just skip restoring
+                    scroll_y = None
             flow_container.clear()
             async with async_session() as session:
                 result = await session.execute(
@@ -563,6 +651,7 @@ def exercise_detail_page():
                     with ui.row().classes("items-center gap-2 py-6 justify-center"):
                         ui.icon("playlist_add", size="sm").classes("text-gray-300")
                         ui.label("No scenario items yet").classes("text-gray-400")
+                    restore_scroll(scroll_y)
                     return
 
                 published_count = sum(1 for i in items if i.is_published)
@@ -588,55 +677,75 @@ def exercise_detail_page():
                     elif item.content:
                         preview = item.content[:80] + ("..." if len(item.content) > 80 else "")
 
+                    # flex-nowrap + the min-w-0 chain below: without them the
+                    # preview label refuses to shrink, overflows its column and
+                    # runs underneath the action buttons instead of truncating.
                     with ui.row().classes(
-                        f"items-center gap-3 w-full py-2 px-3 rounded-lg "
+                        f"flow-row items-center flex-nowrap gap-3 w-full py-2 px-3 rounded-lg "
                         f"{'bg-green-50 border border-green-200' if item.is_published else 'bg-white border border-gray-200'}"
-                    ):
+                    ).props(f'draggable="true" data-id="{item.id}"'):
+                        ui.icon("drag_indicator", size="sm").classes(
+                            "flow-handle text-gray-300 shrink-0 -ml-1"
+                        ).tooltip("Drag to reorder")
                         ui.label(f"#{item.sort_order}").classes(
-                            "text-sm font-mono text-gray-400 w-8"
+                            "text-sm font-mono text-gray-400 w-8 shrink-0"
                         )
-                        ui.badge(type_label, color=accent).props("dense")
+                        ui.badge(type_label, color=accent).props("dense").classes("shrink-0")
                         if item.is_published:
-                            ui.icon("check_circle", size="xs").classes("text-green-500")
+                            ui.icon("check_circle", size="xs").classes("text-green-500 shrink-0")
                         elif item.scheduled_at:
-                            ui.icon("schedule", size="xs").classes("text-blue-500").tooltip(
+                            ui.icon("schedule", size="xs").classes(
+                                "text-blue-500 shrink-0"
+                            ).tooltip(
                                 f"Scheduled for {item.scheduled_at.strftime('%H:%M · %b %d')}"
                             )
                             ui.label(
                                 item.scheduled_at.strftime("%H:%M · %b %d")
-                            ).classes("text-xs text-blue-500")
+                            ).classes("text-xs text-blue-500 shrink-0 whitespace-nowrap")
                         else:
-                            ui.icon("schedule", size="xs").classes("text-gray-400")
-                        with ui.column().classes("flex-1 gap-0 min-w-0"):
-                            ui.label(persona_label).classes("text-xs text-gray-500")
-                            with ui.row().classes("items-center gap-2"):
+                            ui.icon("schedule", size="xs").classes("text-gray-400 shrink-0")
+                        with ui.column().classes("flex-1 min-w-0 gap-0 overflow-hidden"):
+                            ui.label(persona_label).classes("text-xs text-gray-500 truncate")
+                            with ui.row().classes("items-center flex-nowrap gap-2 w-full min-w-0"):
                                 ui.label(preview).classes(
-                                    "text-sm text-gray-700 truncate"
+                                    "text-sm text-gray-700 truncate flex-1 min-w-0"
                                 )
                                 if item.image_url:
-                                    ui.icon("image", size="xs").classes("text-gray-400").tooltip("Has image")
-                        with ui.row().classes("gap-0"):
+                                    ui.icon("image", size="xs").classes(
+                                        "text-gray-400 shrink-0"
+                                    ).tooltip("Has image")
+                        # Row actions. `shrink-0` matters: without it the flex row
+                        # squeezes these buttons on top of the preview text. The
+                        # move arrows are filled discs rather than flat icons —
+                        # flat grey arrows all but disappeared against the row.
+                        with ui.row().classes("gap-1 items-center shrink-0 ml-2"):
                             if idx > 0:
                                 ui.button(icon="arrow_upward").props(
-                                    "flat dense round size=xs color=grey"
-                                ).on("click", lambda _, iid=item.id: move_item(iid, -1))
+                                    "dense round size=sm unelevated color=grey-4 text-color=grey-10"
+                                ).on("click", lambda _, iid=item.id: move_item(iid, -1)).tooltip("Move up")
+                            else:
+                                ui.element("div").classes("w-8 h-8")
                             if idx < len(items) - 1:
                                 ui.button(icon="arrow_downward").props(
-                                    "flat dense round size=xs color=grey"
-                                ).on("click", lambda _, iid=item.id: move_item(iid, 1))
+                                    "dense round size=sm unelevated color=grey-4 text-color=grey-10"
+                                ).on("click", lambda _, iid=item.id: move_item(iid, 1)).tooltip("Move down")
+                            else:
+                                ui.element("div").classes("w-8 h-8")
                             ui.button(icon="edit").props(
-                                "flat dense round size=xs color=grey"
-                            ).on("click", lambda _, iid=item.id: open_edit_flow(iid))
+                                "flat dense round size=sm color=grey-8"
+                            ).on("click", lambda _, iid=item.id: open_edit_flow(iid)).tooltip("Edit")
                             if not item.is_published:
                                 ui.button(icon="play_arrow").props(
-                                    "flat dense round size=xs color=green"
+                                    "flat dense round size=sm color=green"
                                 ).on(
                                     "click",
                                     lambda _, iid=item.id: publish_single(iid),
                                 ).tooltip("Publish this item")
                             ui.button(icon="delete").props(
-                                "flat dense round size=xs color=red"
-                            ).on("click", lambda _, iid=item.id: delete_flow_item(iid))
+                                "flat dense round size=sm color=red"
+                            ).on("click", lambda _, iid=item.id: delete_flow_item(iid)).tooltip("Delete")
+
+            restore_scroll(scroll_y)
 
         def parse_schedule(val: str | None):
             """Parse a datetime-local string into a UTC-aware datetime, or None."""
@@ -676,7 +785,11 @@ def exercise_detail_page():
                 session.add(post)
                 await session.commit()
             flow_social_content.value = ""
-            flow_social_schedule.value = ""
+            # Deliberately keep flow_social_schedule: admins add runs of injects
+            # around the same time, and the browser keeps showing the previous
+            # value after the dialog closes anyway (see open_edit_flow) — so
+            # clearing it server-side only desynced the two and silently
+            # dropped the time when the admin left the field untouched.
             flow_social_image_path[0] = None
             flow_social_image_preview.set_visibility(False)
             flow_social_upload.reset()
@@ -714,7 +827,7 @@ def exercise_detail_page():
             flow_news_headline.value = ""
             flow_news_summary.value = ""
             flow_news_body.value = ""
-            flow_news_schedule.value = ""
+            # Keep flow_news_schedule — see add_social_to_flow.
             flow_news_image_path[0] = None
             flow_news_image_preview.set_visibility(False)
             flow_news_upload.reset()
@@ -777,6 +890,46 @@ def exercise_detail_page():
                     items[swap_idx].sort_order,
                     items[idx].sort_order,
                 )
+                await session.commit()
+            await load_flow()
+
+        async def reorder_flow(e) -> None:
+            """Drop handler for drag-and-drop reordering (see FLOW_DRAG_JS).
+
+            The browser sends the dragged item, the row it was dropped on and
+            whether it landed on that row's upper half; the whole list is then
+            renumbered 1..n so sort_order stays gap-free.
+            """
+            args = e.args[0] if isinstance(e.args, list) else e.args
+            if not isinstance(args, dict):
+                return
+            try:
+                source = uuid.UUID(args["source"])
+                target = uuid.UUID(args["target"])
+            except (KeyError, TypeError, ValueError, AttributeError):
+                return
+            if source == target:
+                return
+            before = bool(args.get("before"))
+            async with async_session() as session:
+                result = await session.execute(
+                    select(Post)
+                    .where(
+                        Post.exercise_id == ex_uuid,
+                        Post.is_inject == True,
+                        Post.sort_order != None,
+                    )
+                    .order_by(Post.sort_order)
+                )
+                items = list(result.scalars().all())
+                ids = [p.id for p in items]
+                if source not in ids or target not in ids:
+                    return
+                moving = items.pop(ids.index(source))
+                target_idx = [p.id for p in items].index(target)
+                items.insert(target_idx if before else target_idx + 1, moving)
+                for position, item in enumerate(items, start=1):
+                    item.sort_order = position
                 await session.commit()
             await load_flow()
 
@@ -859,6 +1012,11 @@ def exercise_detail_page():
                             )
 
                     flow_container = ui.column().classes("w-full gap-1")
+                    # Drag-and-drop reordering. The listeners are delegated from
+                    # `document` on purpose: load_flow() rebuilds every row, so
+                    # per-row handlers would die on the first refresh.
+                    ui.add_body_html(f"<script>{FLOW_DRAG_JS}</script>")
+                    ui.on("flow_reorder", reorder_flow)
 
             # Personas
             with ui.card().classes("w-full mb-4 p-4"):
@@ -1085,7 +1243,7 @@ def exercise_detail_page():
                         ui.button("Cancel", on_click=edit_flow_dialog.close).props("flat no-caps")
                         ui.button("Save", on_click=save_flow_item).props("unelevated no-caps")
 
-            await load_flow()
+            await load_flow(preserve_scroll=False)
 
         # Edit exercise dialog
         if is_admin:

@@ -98,3 +98,20 @@ body {
 .upload-btn .q-uploader__list {
   display: none !important;
 }
+
+/* Scenario flow drag-and-drop reordering (see exercise_detail.py) */
+.flow-row {
+  transition: box-shadow 0.1s ease, opacity 0.1s ease;
+}
+.flow-handle {
+  cursor: grab;
+}
+.flow-row.flow-dragging {
+  opacity: 0.4;
+}
+.flow-row.flow-drop-above {
+  box-shadow: inset 0 3px 0 0 #CA402B;
+}
+.flow-row.flow-drop-below {
+  box-shadow: inset 0 -3px 0 0 #CA402B;
+}
