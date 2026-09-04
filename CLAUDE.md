@@ -41,6 +41,8 @@ docker compose up --build
 # (one-time: uv run --with playwright python -m playwright install chromium).
 PYTHONPATH=. uv run python scripts/seed_demo.py
 PYTHONPATH=. uv run --with playwright python scripts/capture_help.py
+# MONSUN_BASE overrides the URL capture_help.py shoots against, e.g.
+# MONSUN_BASE=http://localhost:8091 when capturing from a throwaway instance
 ```
 
 App runs at http://localhost:8081. Default login: `admin` / `admin`.
@@ -52,6 +54,8 @@ No test suite, linter, or formatter is configured — verify changes by running 
 Single-process NiceGUI app. All UI is server-rendered Python — no separate frontend build step. Each page is a function in `app/pages/` that registers routes via `@ui.page`. State is managed per-session via `app.storage.user`. `app/routers/` and `app/schemas/` are empty stub packages — not currently used.
 
 **Database**: PostgreSQL with SQLAlchemy 2.0 async (asyncpg driver). Schema is managed by `Base.metadata.create_all` at startup, with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements in `app/main.py:startup()` for columns/tables added after initial schema creation — this is the de facto migration log, read it to see schema history. `alembic` and `apscheduler` are in `pyproject.toml` but unused — there are no migration scripts and no background scheduler; don't assume either is wired up.
+
+Screenshots in `static/help/` are used by both `/help` and README.md — re-capture them when the admin UI changes, and keep the filenames stable so Git stores one new blob per changed image instead of a new path.
 
 **Config**: `app/config.py` reads env vars prefixed `CLAW_` (e.g. `CLAW_DATABASE_URL`, `CLAW_SECRET_KEY`, `CLAW_STORAGE_SECRET`, `CLAW_BASE_PATH`). `app/main.py` logs a warning at import time if secrets are left at weak defaults. `CLAW_BASE_PATH` supports running behind a reverse-proxy path prefix via `StripPrefixMiddleware`.
 

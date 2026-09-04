@@ -2,6 +2,8 @@
 
 Monsun is a web-based simulation platform that recreates social media and news environments for training exercises. Built for [Sunet](https://www.sunet.se), it lets exercise administrators craft realistic information flows — scheduled social media posts, breaking news articles, persona-driven narratives — while participants interact with the feeds as they would on real platforms.
 
+![The simulated social and news feeds](static/help/04-feed.png)
+
 ## Features
 
 **Feeds**
@@ -17,14 +19,18 @@ Monsun is a web-based simulation platform that recreates social media and news e
 - Pre-defined scenario flow — ordered sequence of social posts and news articles
 - Step-through publishing: publish the next inject manually or one at a time
 - Schedule flow items to auto-publish at a set date and time
-- Reorder, edit, and delete flow items before or during an exercise
+- Reorder flow items by drag-and-drop, or step them one position with the arrow buttons
 - Image attachments on flow items
 - Clone exercises to reuse scenarios (copies personas, members, and full flow)
+
+![Exercise configuration with the scenario flow](static/help/03-exercise-detail.png)
 
 **Personas**
 - Create fictional social media accounts and news sources per exercise
 - Admins post as personas to simulate real accounts
 - Each persona has a handle, display name, bio, type (social/news/both), and optional avatar
+
+![The global persona registry](static/help/09-personas.png)
 
 **Users and roles**
 - Superadmin: full access — user management, all exercises
@@ -41,6 +47,19 @@ Monsun is a web-based simulation platform that recreates social media and news e
 - Streamlined UI — participants see only the feed, no admin controls
 - Auto-redirect to active exercise feed on login
 - Clean header with search, a Home link, their profile avatar, and logout
+
+## More screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="static/help/05-schedule-post.png" alt="Scheduling a post"><br><sub><b>Scheduling</b> — any post or article can be set to publish at a given time.</sub></td>
+    <td width="50%"><img src="static/help/06-markdown-help.png" alt="Markdown reference"><br><sub><b>Markdown help</b> — syntax and rendered result next to every article field.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="static/help/02-exercises.png" alt="Exercise list"><br><sub><b>Exercises</b> — admins manage them, participants pick one to join.</sub></td>
+    <td width="50%"><img src="static/help/07-users.png" alt="User management"><br><sub><b>Users</b> — roles and avatars, managed by the superadmin.</sub></td>
+  </tr>
+</table>
 
 ## Quick start
 
@@ -132,10 +151,13 @@ app/
     feed.py            # Social + news feed: interactions, editing, scheduling, "Go viral"
     users.py           # User management with avatars (superadmin)
     profile.py         # Self-service profile picture (any user)
+    personas.py        # Global persona registry
+    help.py            # In-app documentation (admin)
   services/
     auth.py            # Password hashing (bcrypt), authentication
 static/
   theme.css            # Global bright theme styles
+  help/                # Screenshots for the in-app help and this README
   sunet-logo.svg       # Sunet brand logo (header + login)
   favicon.png          # Browser tab icon
 ```

@@ -1,5 +1,6 @@
-"""Capture help-page screenshots with Playwright. App must be running on
-localhost:8081 with the demo data seeded. Saves PNGs to static/help/."""
+"""Capture help-page screenshots with Playwright. App must be running with the
+demo data seeded (MONSUN_BASE overrides the default localhost:8081, e.g. when
+capturing against a throwaway instance). Saves PNGs to static/help/."""
 import asyncio
 import os
 
@@ -10,7 +11,7 @@ from app.models import Exercise
 
 from playwright.async_api import async_playwright
 
-BASE = "http://localhost:8081"
+BASE = os.environ.get("MONSUN_BASE", "http://localhost:8081")
 OUT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "help")
 
 

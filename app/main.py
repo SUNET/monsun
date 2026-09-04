@@ -117,10 +117,21 @@ async def startup():
                 ON CONFLICT DO NOTHING
             """)
         )
-        # The 'ready' exercise state was removed — fold any leftovers back to draft
-        await conn.execute(
-            sqlalchemy.text("UPDATE exercises SET state = 'draft' WHERE state = 'ready'")
+        # The 'ready' exercise state was removed — fold any leftovers back to
+        # draft. A database created from the current models has no 'ready' label
+        # in the enum at all, and comparing against it is a hard error there, so
+        # check for the label before running the update.
+        has_ready_label = await conn.scalar(
+            sqlalchemy.text("""
+                SELECT 1 FROM pg_enum e
+                JOIN pg_type t ON t.oid = e.enumtypid
+                WHERE t.typname = 'exercisestate' AND e.enumlabel = 'ready'
+            """)
         )
+        if has_ready_label:
+            await conn.execute(
+                sqlalchemy.text("UPDATE exercises SET state = 'draft' WHERE state = 'ready'")
+            )
     async with async_session() as session:
         await create_default_admin(session)
 
