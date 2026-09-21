@@ -63,6 +63,31 @@ Monsun is a web-based simulation platform that recreates social media and news e
 
 ## Quick start
 
+### Demo in one command
+
+```bash
+./launch_demo.sh
+```
+
+Builds the image if needed, starts PostgreSQL and the app, and seeds the demo exercise *Operation Nordlys* — a live exercise with personas, a populated feed and a scenario flow. Open [http://localhost:8081](http://localhost:8081) and log in as `admin` / `admin`. Seeding is skipped if the demo exercise already exists, so the script is safe to re-run.
+
+Works with Docker or Podman (`docker compose`, `docker-compose`, `podman compose` or `podman-compose`, whichever is found first).
+
+| Command | What it does |
+|---------|--------------|
+| `./launch_demo.sh` | Build (if needed), start, seed |
+| `./launch_demo.sh --rebuild` | Force a fresh image build, e.g. after pulling new code |
+| `./launch_demo.sh --stop` | Stop the stack; data is kept |
+| `./launch_demo.sh --reset` | **Delete the database volume** and start clean — asks you to type `reset` first |
+
+If a port is taken, pick others:
+
+```bash
+MONSUN_APP_PORT=9090 MONSUN_DB_PORT=5433 ./launch_demo.sh
+```
+
+Set `MONSUN_COMPOSE` to force a specific compose command, e.g. `MONSUN_COMPOSE="podman compose"`.
+
 ### Docker Compose (recommended)
 
 ```bash
