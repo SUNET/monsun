@@ -35,6 +35,10 @@ uv run python -m app.main
 # Full stack via Docker Compose
 docker compose up --build
 
+# Full stack + demo seed in one go (Docker or Podman; --rebuild/--stop/--reset,
+# MONSUN_APP_PORT/MONSUN_DB_PORT override ports, which docker-compose.yml reads)
+./launch_demo.sh
+
 # Seed demo data / capture help screenshots (dev scripts).
 # Both need PYTHONPATH set and CLAW_DATABASE_URL exported; capture_help.py also
 # needs the app running on :8081, the demo data seeded, and playwright

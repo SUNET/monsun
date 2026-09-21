@@ -12,21 +12,26 @@ Monsun is a web-based simulation platform that recreates social media and news e
 - In-app Markdown reference (syntax + rendered result) next to every article field
 - Image attachments on any post or article
 - Schedule any post or article to publish at a set date and time
+- Edit posts and articles after publishing, including replacing or removing the image
+- Undo an accidental publish: move a published post back to scheduled at a new time
 - "Go viral" — admins boost a social post to the top of the feed with a highlight
 - Live auto-refresh during active exercises
+- Each feed shows the 20 most recent items, with a "Load more" button for older ones
 
 **Scenario management**
 - Pre-defined scenario flow — ordered sequence of social posts and news articles
-- Step-through publishing: publish the next inject manually or one at a time
+- Step-through publishing: publish the next inject in order, or release a single item (with a confirm step)
+- Unpublish a released item to send it back to pending, or back on its schedule if its time is still ahead
 - Schedule flow items to auto-publish at a set date and time
 - Reorder flow items by drag-and-drop, or step them one position with the arrow buttons
 - Image attachments on flow items
 - Clone exercises to reuse scenarios (copies personas, members, and full flow)
+- Exercise lifecycle: draft → live → ended → archived; a live exercise can go back to draft
 
 ![Exercise configuration with the scenario flow](static/help/03-exercise-detail.png)
 
 **Personas**
-- Create fictional social media accounts and news sources per exercise
+- One global registry of fictional social media accounts and news sources, linked into each exercise that uses them
 - Admins post as personas to simulate real accounts
 - Each persona has a handle, display name, bio, type (social/news/both), and optional avatar
 
@@ -152,7 +157,7 @@ All settings are environment variables with the `CLAW_` prefix:
 | `CLAW_DATABASE_URL` | `postgresql+asyncpg://user:password@localhost:5432/claw` | Async PostgreSQL connection string |
 | `CLAW_SECRET_KEY` | `change` | Application secret key |
 | `CLAW_STORAGE_SECRET` | `storage` | NiceGUI storage encryption secret |
-| `CLAW_MEDIA_DIR` | `./media` | Directory for uploaded images |
+| `CLAW_MEDIA_DIR` | `<project root>/media` | Directory for uploaded images |
 | `CLAW_BASE_PATH` | *(empty)* | URL prefix when behind a reverse proxy |
 
 ## Project structure
@@ -165,9 +170,9 @@ app/
   models/
     base.py            # DeclarativeBase, TimestampMixin
     user.py            # User, UserRole
-    exercise.py        # Exercise, ExerciseMembership, ExerciseState
+    exercise.py        # Exercise, ExerciseMembership, PersonaExercise, ExerciseState, MemberRole
     persona.py         # Persona, PersonaType
-    post.py            # Post, PostInteraction, FeedType
+    post.py            # Post, PostInteraction, FeedType, InteractionType
   pages/
     layout.py          # Nav header, search dialog, theme
     login.py           # Login page
@@ -180,28 +185,43 @@ app/
     help.py            # In-app documentation (admin)
   services/
     auth.py            # Password hashing (bcrypt), authentication
+scripts/
+  seed_demo.py         # Seeds the "Operation Nordlys" demo exercise (idempotent)
+  capture_help.py      # Re-captures the screenshots in static/help/ (Playwright)
 static/
   theme.css            # Global bright theme styles
   help/                # Screenshots for the in-app help and this README
   sunet-logo.svg       # Sunet brand logo (header + login)
   favicon.png          # Browser tab icon
+  favicon.ico
+launch_demo.sh         # Build, start and seed the demo stack (Docker or Podman)
+docker-compose.yml     # PostgreSQL + app
+Dockerfile
 ```
 
 ## Data model
 
 ```
-User          1──N  ExerciseMembership  N──1  Exercise
-                                                 │
-Exercise      1──N  Persona                      │
-                       │                         │
-Post ─────────────────►│ (persona_id, nullable)  │
-  │ exercise_id ──────────────────────────────────┘
+User     1──N  ExerciseMembership  N──1  Exercise ◄── cloned_from_id (Exercise)
+                                            │
+Persona  1──N  PersonaExercise     N──1  ───┤   personas are global,
+  ▲                                         │   linked per exercise
+  │ persona_id (nullable: posts as self)    │
+Post ── exercise_id ────────────────────────┘
   │ author_user_id ──► User
   │ parent_post_id ──► Post (replies)
-  │ repost_of_id ───► Post (reposts)
+  │ repost_of_id ────► Post (reposts)
   │
-PostInteraction (like/repost per user per post)
+PostInteraction  N──1 User   (like / repost, one per user per post)
 ```
+
+A post is one of three things, told apart by its columns:
+
+- **Feed post** — a social post or news article (`feed_type`).
+- **Scenario-flow inject** — `is_inject` with a `sort_order`; unpublished until released.
+- **Scheduled post** — `is_scheduled` with a future `scheduled_at`; published when that time passes.
+
+`Persona.exercise_id` is a legacy column kept for old data; use `PersonaExercise`.
 
 ## Tech stack
 
