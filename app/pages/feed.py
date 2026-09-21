@@ -3,8 +3,8 @@ import uuid
 from datetime import datetime, timezone
 
 from nicegui import app, events, ui
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.orm import aliased, selectinload
 
 from app.config import settings, validate_upload_extension
 from app.database import async_session
@@ -375,6 +375,52 @@ def feed_page():
             else:
                 await refresh_social_feed()
 
+        # --- Undo an accidental publish: move a published post back to
+        # scheduled. A feed post needs a future time — unpublished with none it
+        # would be invisible to everyone, admins included (feed_visibility). ---
+        reschedule_target = [None, None]  # (post_id, feed_type)
+
+        async def open_reschedule(post_id: uuid.UUID, feed_type: FeedType):
+            async with async_session() as session:
+                post = await session.get(Post, post_id)
+                if not post:
+                    return
+                sched = post.scheduled_at
+            reschedule_target[0], reschedule_target[1] = post_id, feed_type
+            # Prefill the original time if the post was published ahead of it.
+            reschedule_input.value = (
+                sched.strftime("%Y-%m-%dT%H:%M")
+                if sched and sched > datetime.now(timezone.utc)
+                else ""
+            )
+            reschedule_input.run_method("updateValue")
+            reschedule_dialog.open()
+
+        async def save_reschedule():
+            sched_dt = parse_schedule(reschedule_input.value)
+            if not sched_dt or sched_dt <= datetime.now(timezone.utc):
+                ui.notify("Pick a time in the future", type="warning")
+                return
+            post_id, feed_type = reschedule_target
+            async with async_session() as session:
+                post = await session.get(Post, post_id)
+                if post:
+                    post.is_published = False
+                    post.is_scheduled = True
+                    post.scheduled_at = sched_dt
+                    # publish_due_posts() fills this in from scheduled_at.
+                    post.published_at = None
+                    await session.commit()
+            reschedule_dialog.close()
+            if feed_type == FeedType.news:
+                await refresh_news_feed()
+            else:
+                await refresh_social_feed()
+            ui.notify(
+                f"Unpublished — scheduled for {sched_dt.strftime('%H:%M · %b %d')}",
+                type="positive",
+            )
+
         async def reply_to(post_id: uuid.UUID):
             if not reply_content.value.strip():
                 ui.notify("Write a reply", type="warning")
@@ -485,11 +531,21 @@ def feed_page():
 
         # --- Feed visibility: admins also see pending scheduled posts (injects
         # waiting for their time); participants only see published ones. ---
+        # Participants also lose reposts whose original was unpublished again
+        # (open_reschedule), or the quote card would still leak it.
+        Original = aliased(Post)
+
         def feed_visibility():
-            return (
-                or_(Post.is_published == True, Post.is_scheduled == True)
-                if is_admin
-                else (Post.is_published == True)
+            if is_admin:
+                return or_(Post.is_published == True, Post.is_scheduled == True)
+            return and_(
+                Post.is_published == True,
+                or_(
+                    Post.repost_of_id == None,
+                    Post.repost_of_id.in_(
+                        select(Original.id).where(Original.is_published == True)
+                    ),
+                ),
             )
 
         # Pending scheduled posts have no published_at yet, so sort on the time
@@ -781,6 +837,13 @@ def feed_page():
                                 ).props(
                                     f"flat dense no-caps size=sm {'color=orange' if is_boosted else 'color=grey'}"
                                 )
+                            if is_admin and post.is_published and not post.repost_of_id:
+                                ui.button(
+                                    icon="schedule",
+                                    on_click=lambda _, pid=post.id: open_reschedule(pid, FeedType.social),
+                                ).props("flat dense size=sm color=grey").tooltip(
+                                    "Unpublish and schedule"
+                                )
                             if is_admin or str(post.author_user_id) == user_id:
                                 ui.button(
                                     icon="edit",
@@ -862,6 +925,13 @@ def feed_page():
                         ui.label("Read more").classes("text-red-600 text-sm font-semibold")
                         if is_admin or str(post.author_user_id) == user_id:
                             with ui.row().classes("gap-0"):
+                                if is_admin and post.is_published:
+                                    ui.button(icon="schedule").props(
+                                        "flat dense size=sm color=grey"
+                                    ).on(
+                                        "click.stop",
+                                        lambda pid=post.id: open_reschedule(pid, FeedType.news),
+                                    ).tooltip("Unpublish and schedule")
                                 ui.button(icon="edit").props(
                                     "flat dense size=sm color=grey"
                                 ).on("click.stop", lambda pid=post.id: open_edit_news(pid))
@@ -1069,6 +1139,23 @@ def feed_page():
                     with ui.row().classes("justify-end w-full mt-3 gap-2"):
                         ui.button("Cancel", on_click=edit_news_dialog.close).props("flat no-caps")
                         ui.button("Save", on_click=save_edit_news).props("unelevated no-caps")
+
+            with ui.dialog() as reschedule_dialog:
+                with ui.card().classes("w-96 p-4"):
+                    with ui.row().classes("items-center gap-2 mb-3"):
+                        ui.icon("schedule", size="sm").classes("text-blue-500")
+                        ui.label("Unpublish and schedule").classes("text-lg font-bold text-gray-800")
+                    ui.label(
+                        "The post disappears from participants' feeds and comes back at "
+                        "this time. Likes and replies are kept, but participants who already "
+                        "saw it will remember it."
+                    ).classes("text-gray-600 text-sm")
+                    reschedule_input = ui.input("Publish at").props(
+                        "outlined type=datetime-local"
+                    ).classes("w-full mt-2")
+                    with ui.row().classes("justify-end w-full mt-4 gap-2"):
+                        ui.button("Cancel", on_click=reschedule_dialog.close).props("flat no-caps")
+                        ui.button("Unpublish", on_click=save_reschedule).props("unelevated no-caps")
 
         # Auto-refresh for live exercises
         if exercise.state == ExerciseState.live:

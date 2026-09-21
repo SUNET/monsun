@@ -739,8 +739,15 @@ def exercise_detail_page():
                                     "flat dense round size=sm color=green"
                                 ).on(
                                     "click",
-                                    lambda _, iid=item.id: publish_single(iid),
+                                    lambda _, iid=item.id, pv=preview: confirm_publish_single(iid, pv),
                                 ).tooltip("Publish this item")
+                            else:
+                                ui.button(icon="undo").props(
+                                    "flat dense round size=sm color=grey-8"
+                                ).on(
+                                    "click",
+                                    lambda _, iid=item.id: unpublish_flow_item(iid),
+                                ).tooltip("Unpublish (back to pending)")
                             ui.button(icon="delete").props(
                                 "flat dense round size=sm color=red"
                             ).on("click", lambda _, iid=item.id: delete_flow_item(iid)).tooltip("Delete")
@@ -867,6 +874,47 @@ def exercise_detail_page():
                     await session.commit()
             await load_flow()
             ui.notify("Published", type="positive")
+
+        # The per-row ▶ publishes at once and is easy to hit by mistake while
+        # reaching for edit/delete, so it goes through a confirm dialog.
+        publish_confirm_id = [None]
+
+        def confirm_publish_single(post_id: uuid.UUID, preview: str):
+            publish_confirm_id[0] = post_id
+            publish_confirm_label.set_text(
+                f'Publish "{preview}" now? Participants will see it immediately.'
+                if preview
+                else "Publish this item now? Participants will see it immediately."
+            )
+            publish_confirm_dialog.open()
+
+        async def do_confirmed_publish():
+            publish_confirm_dialog.close()
+            if publish_confirm_id[0]:
+                await publish_single(publish_confirm_id[0])
+
+        async def unpublish_flow_item(post_id: uuid.UUID):
+            """Undo an accidental publish: back to pending. If the item still
+            holds a future scheduled_at (published early with ▶), it goes back
+            on that schedule; a past one is dropped, otherwise
+            publish_due_posts() would republish it on the next feed load."""
+            now = datetime.now(timezone.utc)
+            async with async_session() as session:
+                post = await session.get(Post, post_id)
+                if not post or not post.is_published:
+                    return
+                post.is_published = False
+                post.published_at = None
+                if post.scheduled_at and post.scheduled_at > now:
+                    post.is_scheduled = True
+                    msg = f"Back to scheduled for {post.scheduled_at.strftime('%H:%M · %b %d')}"
+                else:
+                    post.scheduled_at = None
+                    post.is_scheduled = False
+                    msg = "Unpublished — back to pending"
+                await session.commit()
+            await load_flow()
+            ui.notify(msg, type="positive")
 
         async def move_item(post_id: uuid.UUID, direction: int):
             async with async_session() as session:
@@ -1337,6 +1385,18 @@ def exercise_detail_page():
                         ui.button(
                             "Back to Draft", on_click=lambda: change_state(ExerciseState.draft)
                         ).props("unelevated no-caps")
+
+            with ui.dialog() as publish_confirm_dialog:
+                with ui.card().classes("w-96 p-4"):
+                    with ui.row().classes("items-center gap-2 mb-3"):
+                        ui.icon("play_arrow", size="sm").classes("text-green-500")
+                        ui.label("Publish Item").classes("text-lg font-bold text-gray-800")
+                    publish_confirm_label = ui.label("").classes("text-gray-600")
+                    with ui.row().classes("justify-end w-full mt-4 gap-2"):
+                        ui.button("Cancel", on_click=publish_confirm_dialog.close).props("flat no-caps")
+                        ui.button("Publish", on_click=do_confirmed_publish).props(
+                            "unelevated no-caps color=green"
+                        )
 
             with ui.dialog() as delete_exercise_dialog:
                 with ui.card().classes("w-96 p-4"):

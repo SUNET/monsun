@@ -192,7 +192,11 @@ def help_page():
                 "- **Edit** an item's text, body or scheduled time.\n"
                 "- **Publish next** — releases the next unpublished item in order. "
                 "The counter above the list shows `published/total`.\n"
-                "- **Play** on a single row — releases just that item, out of order.\n"
+                "- **Play** on a single row — releases just that item, out of order, "
+                "after you confirm.\n"
+                "- **Undo** on a published row — takes the item back out of the feed. "
+                "If it still had a scheduled time ahead, it goes back on that "
+                "schedule; otherwise it waits to be published again.\n"
                 "- **Delete** an item.\n\n"
                 "Published rows turn green. A clock icon marks an item with a "
                 "scheduled time; those publish on their own when the time passes. "
@@ -240,6 +244,13 @@ def help_page():
                 "whenever someone loads the feed or the 10-second poll fires. If no "
                 "one has the feed open, a scheduled post goes out the moment the next "
                 "person opens it — keep a feed open during a live exercise."
+            )
+            _p(
+                "Published something too early? Click the **clock** button on the "
+                "post in the feed, pick a new time and choose **Unpublish**. The post "
+                "leaves participants' feeds (along with any reposts of it) and comes "
+                "back at the new time, with its likes and replies intact. Participants "
+                "who already saw it have still seen it."
             )
             _shot("05-schedule-post.png", "The new-post dialog with the Publish at field.")
 
