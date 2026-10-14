@@ -6,6 +6,7 @@ from nicegui import app, events, ui
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import aliased, selectinload
 
+from app.timeutil import local, parse_schedule
 from app.config import settings, validate_upload_extension
 from app.database import async_session
 from app.models import (
@@ -107,17 +108,6 @@ def feed_page():
             news_image_preview.set_visibility(False)
 
         # --- Helpers ---
-        def parse_schedule(val: str | None):
-            """Parse a datetime-local string into a UTC-aware datetime, or None."""
-            if not val:
-                return None
-            try:
-                dt = datetime.fromisoformat(val)
-            except ValueError:
-                return None
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
 
         def get_selected_persona_id():
             if is_admin and social_persona_select.value:
@@ -167,7 +157,7 @@ def feed_page():
             await refresh_social_feed()
             if is_future:
                 ui.notify(
-                    f"Scheduled for {sched_dt.strftime('%H:%M · %b %d')}",
+                    f"Scheduled for {local(sched_dt).strftime('%H:%M · %b %d')}",
                     type="positive",
                 )
 
@@ -212,7 +202,7 @@ def feed_page():
             news_dialog.close()
             await refresh_news_feed()
             ui.notify(
-                f"Scheduled for {sched_dt.strftime('%H:%M · %b %d')}"
+                f"Scheduled for {local(sched_dt).strftime('%H:%M · %b %d')}"
                 if is_future
                 else "News article published",
                 type="positive",
@@ -389,7 +379,7 @@ def feed_page():
             reschedule_target[0], reschedule_target[1] = post_id, feed_type
             # Prefill the original time if the post was published ahead of it.
             reschedule_input.value = (
-                sched.strftime("%Y-%m-%dT%H:%M")
+                local(sched).strftime("%Y-%m-%dT%H:%M")
                 if sched and sched > datetime.now(timezone.utc)
                 else ""
             )
@@ -417,7 +407,7 @@ def feed_page():
             else:
                 await refresh_social_feed()
             ui.notify(
-                f"Unpublished — scheduled for {sched_dt.strftime('%H:%M · %b %d')}",
+                f"Unpublished — scheduled for {local(sched_dt).strftime('%H:%M · %b %d')}",
                 type="positive",
             )
 
@@ -698,7 +688,7 @@ def feed_page():
                         ui.label(r_name).classes("font-semibold text-gray-700 text-sm")
                         ui.label(r_handle).classes("text-gray-400 text-xs")
                         if reply.published_at:
-                            ui.label(reply.published_at.strftime("%H:%M")).classes(
+                            ui.label(local(reply.published_at).strftime("%H:%M")).classes(
                                 "text-gray-400 text-xs"
                             )
                     if r_bio:
@@ -719,7 +709,7 @@ def feed_page():
                             ui.label(o_handle).classes("text-gray-400 text-xs")
                             if original.published_at:
                                 ui.label(
-                                    original.published_at.strftime("%H:%M · %b %d")
+                                    local(original.published_at).strftime("%H:%M · %b %d")
                                 ).classes("text-gray-400 text-xs")
                         if o_bio:
                             ui.label(o_bio).classes("text-gray-400 text-xs italic -mt-1")
@@ -776,13 +766,13 @@ def feed_page():
                             ui.label(post_handle).classes("text-gray-400 text-sm")
                             if post.published_at:
                                 ui.label(
-                                    post.published_at.strftime("%H:%M · %b %d")
+                                    local(post.published_at).strftime("%H:%M · %b %d")
                                 ).classes("text-gray-400 text-sm")
                             if post.is_inject:
                                 ui.badge("inject", color="orange").props("dense")
                             if not post.is_published and post.scheduled_at:
                                 ui.badge(
-                                    f"scheduled {post.scheduled_at.strftime('%H:%M · %b %d')}",
+                                    f"scheduled {local(post.scheduled_at).strftime('%H:%M · %b %d')}",
                                     color="blue",
                                 ).props("dense")
 
@@ -889,7 +879,7 @@ def feed_page():
                 article_source.set_text(f"{post_display_name} {post_handle}")
                 article_title.set_text(post.headline or "")
                 article_time.set_text(
-                    post.published_at.strftime("%H:%M · %b %d, %Y") if post.published_at else ""
+                    local(post.published_at).strftime("%H:%M · %b %d, %Y") if post.published_at else ""
                 )
                 article_content.set_content(post.article_body or post.content or "")
                 article_dialog.open()
@@ -904,11 +894,11 @@ def feed_page():
                         ui.label(post_display_name).classes("font-semibold text-red-700 text-sm")
                         if post.published_at:
                             ui.label(
-                                post.published_at.strftime("%H:%M")
+                                local(post.published_at).strftime("%H:%M")
                             ).classes("text-gray-400 text-xs")
                         if not post.is_published and post.scheduled_at:
                             ui.badge(
-                                f"scheduled {post.scheduled_at.strftime('%H:%M · %b %d')}",
+                                f"scheduled {local(post.scheduled_at).strftime('%H:%M · %b %d')}",
                                 color="blue",
                             ).props("dense")
                     if post_bio:

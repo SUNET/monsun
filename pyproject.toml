@@ -13,4 +13,5 @@ dependencies = [
     "pydantic-settings>=2.13.1",
     "python-multipart>=0.0.21",
     "sqlalchemy[asyncio]>=2.0.49",
+    "tzdata>=2025.2",
 ]

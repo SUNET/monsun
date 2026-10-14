@@ -6,6 +6,7 @@ from nicegui import app, events, ui
 from sqlalchemy import delete as sa_delete, func, select, update as sa_update
 from sqlalchemy.orm import selectinload
 
+from app.timeutil import local, parse_schedule
 from app.config import settings, validate_upload_extension
 from app.database import async_session
 from app.models import (
@@ -253,7 +254,7 @@ def exercise_detail_page():
                 edit_flow_headline.value = post.headline or ""
                 edit_flow_body.value = post.article_body or ""
                 edit_flow_schedule.value = (
-                    post.scheduled_at.strftime("%Y-%m-%dT%H:%M")
+                    local(post.scheduled_at).strftime("%Y-%m-%dT%H:%M")
                     if post.scheduled_at
                     else ""
                 )
@@ -697,10 +698,10 @@ def exercise_detail_page():
                             ui.icon("schedule", size="xs").classes(
                                 "text-blue-500 shrink-0"
                             ).tooltip(
-                                f"Scheduled for {item.scheduled_at.strftime('%H:%M · %b %d')}"
+                                f"Scheduled for {local(item.scheduled_at).strftime('%H:%M · %b %d')}"
                             )
                             ui.label(
-                                item.scheduled_at.strftime("%H:%M · %b %d")
+                                local(item.scheduled_at).strftime("%H:%M · %b %d")
                             ).classes("text-xs text-blue-500 shrink-0 whitespace-nowrap")
                         else:
                             ui.icon("schedule", size="xs").classes("text-gray-400 shrink-0")
@@ -754,17 +755,6 @@ def exercise_detail_page():
 
             restore_scroll(scroll_y)
 
-        def parse_schedule(val: str | None):
-            """Parse a datetime-local string into a UTC-aware datetime, or None."""
-            if not val:
-                return None
-            try:
-                dt = datetime.fromisoformat(val)
-            except ValueError:
-                return None
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
 
         async def add_social_to_flow():
             if not flow_social_persona.value:
@@ -907,7 +897,7 @@ def exercise_detail_page():
                 post.published_at = None
                 if post.scheduled_at and post.scheduled_at > now:
                     post.is_scheduled = True
-                    msg = f"Back to scheduled for {post.scheduled_at.strftime('%H:%M · %b %d')}"
+                    msg = f"Back to scheduled for {local(post.scheduled_at).strftime('%H:%M · %b %d')}"
                 else:
                     post.scheduled_at = None
                     post.is_scheduled = False

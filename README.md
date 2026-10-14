@@ -159,6 +159,7 @@ All settings are environment variables with the `CLAW_` prefix:
 | `CLAW_STORAGE_SECRET` | `storage` | NiceGUI storage encryption secret |
 | `CLAW_MEDIA_DIR` | `<project root>/media` | Directory for uploaded images |
 | `CLAW_BASE_PATH` | *(empty)* | URL prefix when behind a reverse proxy |
+| `CLAW_TIMEZONE` | `Europe/Stockholm` | IANA timezone for entering and displaying scheduled/published times (stored as UTC) |
 
 ## Project structure
 

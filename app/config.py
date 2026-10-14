@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     media_dir: str = os.path.join(_PROJECT_DIR, "media")
     storage_secret: str = "storage"
     base_path: str = ""
+    timezone: str = "Europe/Stockholm"
 
     model_config = {"env_prefix": "CLAW_"}
 
